@@ -20,7 +20,7 @@ export async function GET(
 
     const record = await Permission.findOne({
       _id: id,
-      status: PermissionStatus.ACTIVE,
+      // status: PermissionStatus.ACTIVE,
     }).lean();
 
     if (!record) {
@@ -55,7 +55,7 @@ export async function PUT(
     const body = await request.json();
 
     const updatedRecord = await Permission.findOneAndUpdate(
-      { _id: id, status: PermissionStatus.ACTIVE },
+      { _id: id /* status: PermissionStatus.ACTIVE */ },
       {
         permission: body.permission,
       },
@@ -124,6 +124,47 @@ export async function DELETE(
     console.error("Error deleting permission:", error);
     return NextResponse.json(
       { error: "Failed to delete permission" },
+      { status: 500 },
+    );
+  }
+}
+
+// PATCH - Activate permission by ID (opposite of soft delete)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  // Check authentication and permission (using Edit permission)
+  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
+  if (error) return error;
+
+  try {
+    await dbConnect();
+    const { id } = await params;
+
+    const activatedRecord = await Permission.findByIdAndUpdate(
+      id,
+      {
+        status: PermissionStatus.ACTIVE,
+        deletedAt: null,
+        deletedBy: null,
+        deletedReason: null,
+      },
+      { new: true },
+    );
+
+    if (!activatedRecord) {
+      return NextResponse.json(
+        { error: "Permission not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json(activatedRecord);
+  } catch (error) {
+    console.error("Error activating permission:", error);
+    return NextResponse.json(
+      { error: "Failed to activate permission" },
       { status: 500 },
     );
   }

@@ -8,7 +8,9 @@ import PageNotFound from "@/components/PageNotFound";
 import Modal from "@/components/Modal";
 import ConfirmModal from "@/components/ConfirmModal";
 import LoadingModal from "@/components/LoadingModal";
-import DataTable, { Column } from "@/components/DataTable";
+import ErrorModal from "@/components/ErrorModal";
+import DataTable from "@/components/DataTable";
+import toast from "react-hot-toast";
 
 interface Role {
   _id: string;
@@ -39,7 +41,7 @@ interface User {
 export default function UserPage() {
   const router = useRouter();
   const { loading: pageLoading, accessDenied } = usePageAccess();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [formData, setFormData] = useState({
@@ -60,15 +62,83 @@ export default function UserPage() {
   const [loading, setLoading] = useState(false);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showActivateModal, setShowActivateModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     name: string;
   } | null>(null);
+  const [activateTarget, setActivateTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [changePasswordTarget, setChangePasswordTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [changePasswordData, setChangePasswordData] = useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [errorModal, setErrorModal] = useState({
+    isOpen: false,
+    message: "",
+  });
 
   const canAdd = hasPermission("/admin/user", "Add");
   const canEdit = hasPermission("/admin/user", "Edit");
   const canDelete = hasPermission("/admin/user", "Delete");
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("/api/admin/user");
+      const data = await res.json();
+      setUsers(data);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "Failed to fetch users. Please try again.",
+      });
+    }
+  };
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch("/api/admin/role");
+      const data = await res.json();
+      setRoles(data.filter((r: Role) => r.status === "ACTIVE"));
+    } catch (error) {
+      console.error("Error fetching roles:", error);
+    }
+  };
+
+  const handleAdvancedSearch = async (filters: Record<string, string>) => {
+    setLoading(true);
+    try {
+      // Build query string from filters
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+          queryParams.append(key, value);
+        }
+      });
+
+      const url = `/api/admin/user${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setUsers(data);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "Failed to fetch users. Please try again.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -89,40 +159,34 @@ export default function UserPage() {
     return <PageNotFound />;
   }
 
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch("/api/admin/user");
-      const data = await res.json();
-      setUsers(data);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      alert("Failed to fetch users");
-    }
-  };
-
-  const fetchRoles = async () => {
-    try {
-      const res = await fetch("/api/admin/role");
-      const data = await res.json();
-      setRoles(data.filter((r: Role) => r.status === "ACTIVE"));
-    } catch (error) {
-      console.error("Error fetching roles:", error);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setShowLoadingModal(true);
 
     try {
-      const url = "/api/admin/user";
+      const url = isEditing
+        ? `/api/admin/user/${formData._id}`
+        : "/api/admin/user";
       const method = isEditing ? "PUT" : "POST";
 
-      const payload: any = { ...formData };
-      if (isEditing && !payload.password) {
-        delete payload.password;
-      }
+      // Build payload, excluding password if editing and password is empty
+      const payload =
+        isEditing && !formData.password
+          ? {
+              _id: formData._id,
+              email: formData.email,
+              firstName: formData.firstName,
+              lastName: formData.lastName,
+              phone: formData.phone,
+              roleId: formData.roleId,
+              rate: formData.rate,
+              cashReceivable: formData.cashReceivable,
+              capitalContribution: formData.capitalContribution,
+              profitEarned: formData.profitEarned,
+              status: formData.status,
+            }
+          : formData;
 
       const res = await fetch(url, {
         method,
@@ -131,19 +195,27 @@ export default function UserPage() {
       });
 
       if (res.ok) {
-        alert(
-          isEditing ? "User updated successfully" : "User created successfully",
+        toast.success(
+          isEditing
+            ? "User updated successfully! ✅"
+            : "User created successfully! 🎉",
         );
         resetForm();
         fetchUsers();
         setShowFormModal(false);
       } else {
         const error = await res.json();
-        alert(error.error || "Operation failed");
+        setErrorModal({
+          isOpen: true,
+          message: error.error || "Operation failed. Please try again.",
+        });
       }
     } catch (error) {
       console.error("Error:", error);
-      alert("An error occurred");
+      setErrorModal({
+        isOpen: true,
+        message: "An unexpected error occurred. Please try again.",
+      });
     } finally {
       setLoading(false);
       setShowLoadingModal(false);
@@ -174,31 +246,151 @@ export default function UserPage() {
     setShowDeleteModal(true);
   };
 
-  const handleDeleteConfirm = async (reason: string) => {
-    if (!deleteTarget) return;
+  const handleDeleteConfirm = async (reason?: string) => {
+    if (!deleteTarget || !reason) return;
 
     setShowDeleteModal(false);
     setShowLoadingModal(true);
 
     try {
       const res = await fetch(
-        `/api/admin/user?_id=${deleteTarget.id}&deletedReason=${encodeURIComponent(reason)}`,
+        `/api/admin/user/${deleteTarget.id}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
         { method: "DELETE" },
       );
 
       if (res.ok) {
-        alert("User deleted successfully");
+        toast.success("User deleted successfully! 🗑️");
         fetchUsers();
       } else {
         const error = await res.json();
-        alert(error.error || "Delete failed");
+        setErrorModal({
+          isOpen: true,
+          message: error.error || "Delete failed. Please try again.",
+        });
       }
     } catch (error) {
       console.error("Error:", error);
-      alert("An error occurred");
+      setErrorModal({
+        isOpen: true,
+        message: "An unexpected error occurred. Please try again.",
+      });
     } finally {
       setShowLoadingModal(false);
       setDeleteTarget(null);
+    }
+  };
+
+  const handleActivateClick = (id: string, name: string) => {
+    setActivateTarget({ id, name });
+    setShowActivateModal(true);
+  };
+
+  const handleActivateConfirm = async () => {
+    if (!activateTarget) return;
+
+    setShowActivateModal(false);
+    setShowLoadingModal(true);
+
+    try {
+      const res = await fetch(`/api/admin/user/${activateTarget.id}`, {
+        method: "PATCH",
+      });
+
+      if (res.ok) {
+        toast.success(
+          `User "${activateTarget.name}" activated successfully! ✅`,
+        );
+        fetchUsers();
+      } else {
+        const error = await res.json();
+        setErrorModal({
+          isOpen: true,
+          message: error.error || "Activation failed. Please try again.",
+        });
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "An unexpected error occurred. Please try again.",
+      });
+    } finally {
+      setShowLoadingModal(false);
+      setActivateTarget(null);
+    }
+  };
+
+  const handleChangePasswordClick = (id: string, name: string) => {
+    setChangePasswordTarget({ id, name });
+    setChangePasswordData({
+      newPassword: "",
+      confirmPassword: "",
+    });
+    setShowChangePasswordModal(true);
+  };
+
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validate passwords match
+    if (changePasswordData.newPassword !== changePasswordData.confirmPassword) {
+      setErrorModal({
+        isOpen: true,
+        message: "New password and confirm password do not match.",
+      });
+      return;
+    }
+
+    // Validate password length
+    if (changePasswordData.newPassword.length < 6) {
+      setErrorModal({
+        isOpen: true,
+        message: "New password must be at least 6 characters long.",
+      });
+      return;
+    }
+
+    if (!changePasswordTarget) return;
+
+    setShowChangePasswordModal(false);
+    setShowLoadingModal(true);
+
+    try {
+      const res = await fetch(
+        `/api/admin/user/${changePasswordTarget.id}/change-password`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            newPassword: changePasswordData.newPassword,
+          }),
+        },
+      );
+
+      if (res.ok) {
+        toast.success(
+          `Password for "${changePasswordTarget.name}" changed successfully! 🔒`,
+        );
+        setChangePasswordData({
+          newPassword: "",
+          confirmPassword: "",
+        });
+        setChangePasswordTarget(null);
+      } else {
+        const error = await res.json();
+        setErrorModal({
+          isOpen: true,
+          message: error.error || "Password change failed. Please try again.",
+        });
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "An unexpected error occurred. Please try again.",
+      });
+    } finally {
+      setShowLoadingModal(false);
     }
   };
 
@@ -274,21 +466,35 @@ export default function UserPage() {
             key: "email",
             label: "Email",
             sortable: true,
+            searchable: true,
             render: (user: User) => (
               <span className="text-sm text-gray-900">{user.email}</span>
             ),
             exportValue: (user: User) => user.email,
           },
           {
-            key: "name",
-            label: "Name",
+            key: "firstName",
+            label: "First Name",
             sortable: true,
+            searchable: true,
             render: (user: User) => (
               <span className="text-sm font-medium text-gray-900">
-                {user.firstName} {user.lastName}
+                {user.firstName}
               </span>
             ),
-            exportValue: (user: User) => `${user.firstName} ${user.lastName}`,
+            exportValue: (user: User) => user.firstName,
+          },
+          {
+            key: "lastName",
+            label: "Last Name",
+            sortable: true,
+            searchable: true,
+            render: (user: User) => (
+              <span className="text-sm font-medium text-gray-900">
+                {user.lastName}
+              </span>
+            ),
+            exportValue: (user: User) => user.lastName,
           },
           {
             key: "phone",
@@ -416,7 +622,33 @@ export default function UserPage() {
                     </svg>
                   </button>
                 )}
-                {canDelete && (
+                {canEdit && user.status === "ACTIVE" && (
+                  <button
+                    onClick={() =>
+                      handleChangePasswordClick(
+                        user._id,
+                        `${user.firstName} ${user.lastName}`,
+                      )
+                    }
+                    className="p-1.5 sm:p-2 text-zentyal-primary hover:bg-zentyal-primary/10 rounded-lg transition-colors"
+                    title="Change Password"
+                  >
+                    <svg
+                      className="w-4 h-4 sm:w-5 sm:h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                      />
+                    </svg>
+                  </button>
+                )}
+                {canDelete && user.status === "ACTIVE" && (
                   <button
                     onClick={() =>
                       handleDeleteClick(
@@ -442,6 +674,33 @@ export default function UserPage() {
                     </svg>
                   </button>
                 )}
+                {canEdit &&
+                  (user.status === "DELETED" || user.status === "INACTIVE") && (
+                    <button
+                      onClick={() =>
+                        handleActivateClick(
+                          user._id,
+                          `${user.firstName} ${user.lastName}`,
+                        )
+                      }
+                      className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      title="Activate User"
+                    >
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  )}
               </div>
             ),
           },
@@ -466,6 +725,7 @@ export default function UserPage() {
         exportFileName="users"
         searchPlaceholder="Search users..."
         itemsPerPage={10}
+        onAdvancedSearch={handleAdvancedSearch}
       />
 
       {/* Form Modal */}
@@ -749,10 +1009,126 @@ export default function UserPage() {
         requireReason={true}
       />
 
+      {/* Activate Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showActivateModal}
+        onClose={() => setShowActivateModal(false)}
+        onConfirm={handleActivateConfirm}
+        title="Activate User"
+        message={`Are you sure you want to activate ${activateTarget?.name}?`}
+        confirmText="Activate"
+        requireReason={false}
+      />
+
+      {/* Change Password Modal */}
+      <Modal
+        isOpen={showChangePasswordModal}
+        onClose={() => {
+          setShowChangePasswordModal(false);
+          setChangePasswordData({
+            newPassword: "",
+            confirmPassword: "",
+          });
+        }}
+        title={`Change Password - ${changePasswordTarget?.name}`}
+        size="md"
+      >
+        <form onSubmit={handleChangePasswordSubmit}>
+          <div className="space-y-4">
+            {/* New Password */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                New Password <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={changePasswordData.newPassword}
+                onChange={(e) =>
+                  setChangePasswordData({
+                    ...changePasswordData,
+                    newPassword: e.target.value,
+                  })
+                }
+                required
+                minLength={6}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                placeholder="Enter new password (min 6 characters)"
+              />
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Confirm New Password <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={changePasswordData.confirmPassword}
+                onChange={(e) =>
+                  setChangePasswordData({
+                    ...changePasswordData,
+                    confirmPassword: e.target.value,
+                  })
+                }
+                required
+                minLength={6}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                placeholder="Confirm new password"
+              />
+            </div>
+
+            {/* Password Requirements Info */}
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+              <p className="text-xs text-orange-800 font-medium mb-1">
+                Password Requirements:
+              </p>
+              <ul className="text-xs text-orange-700 space-y-1 list-disc list-inside">
+                <li>Minimum 6 characters</li>
+                <li>Both passwords must match</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Form Actions */}
+          <div className="mt-6 flex gap-3">
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark 
+                       transition-all duration-200 font-semibold shadow-md hover:shadow-lg"
+            >
+              Change Password
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowChangePasswordModal(false);
+                setChangePasswordData({
+                  newPassword: "",
+                  confirmPassword: "",
+                });
+              }}
+              className="px-6 py-2.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 
+                       transition-all duration-200 font-semibold"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Loading Modal */}
       <LoadingModal
         isOpen={showLoadingModal}
-        message={loading ? "Processing..." : "Deleting user..."}
+        message={loading ? "Processing..." : "Processing user..."}
+      />
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, message: "" })}
+        message={errorModal.message}
       />
     </div>
   );

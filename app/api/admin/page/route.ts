@@ -13,9 +13,31 @@ export async function GET(request: NextRequest) {
 
   try {
     await dbConnect();
-    const records = await Page.find({ status: PageStatus.ACTIVE })
-      .sort({ order: 1 })
-      .lean();
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get("status");
+    const page = searchParams.get("page");
+    const path = searchParams.get("path");
+
+    // Build filter
+    const filter: Record<string, unknown> = {};
+
+    // if (status) {
+    //   filter.status = { $regex: status, $options: "i" };
+    // } else {
+    //   // By default, show only ACTIVE pages
+    //   filter.status = PageStatus.ACTIVE;
+    // }
+
+    if (page) {
+      filter.page = { $regex: page, $options: "i" };
+    }
+
+    if (path) {
+      filter.path = { $regex: path, $options: "i" };
+    }
+
+    const records = await Page.find(filter).sort({ order: 1 }).lean();
     return NextResponse.json(records);
   } catch (error) {
     console.error("Error fetching records:", error);

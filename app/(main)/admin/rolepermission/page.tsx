@@ -71,8 +71,13 @@ export default function RolePermissionManagement() {
   const [error, setError] = useState<string | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showActivateModal, setShowActivateModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [activateTarget, setActivateTarget] = useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -81,21 +86,6 @@ export default function RolePermissionManagement() {
   const canAdd = hasPermission("/admin/rolepermission", "Add");
   const canEdit = hasPermission("/admin/rolepermission", "Edit");
   const canDelete = hasPermission("/admin/rolepermission", "Delete");
-
-  useEffect(() => {
-    const loadData = async () => {
-      await Promise.all([
-        fetchRolePermissions(),
-        fetchRoles(),
-        fetchPages(),
-        fetchPermissions(),
-      ]);
-    };
-    loadData();
-  }, []);
-
-  if (pageLoading) return <LoadingSpinner />;
-  if (accessDenied) return <PageNotFound />;
 
   const fetchRolePermissions = async (roleIdFilter?: string) => {
     try {
@@ -147,6 +137,55 @@ export default function RolePermissionManagement() {
       setPermissions(data);
     } catch (err) {
       console.error("Error fetching permissions:", err);
+    }
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      await Promise.all([
+        fetchRolePermissions(),
+        fetchRoles(),
+        fetchPages(),
+        fetchPermissions(),
+      ]);
+    };
+    loadData();
+  }, []);
+
+  if (pageLoading) return <LoadingSpinner />;
+  if (accessDenied) return <PageNotFound />;
+
+  const handleAdvancedSearch = async (filters: Record<string, string>) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Build query string from filters
+      const queryParams = new URLSearchParams();
+
+      // Apply role filter if exists
+      if (filterRoleId) {
+        queryParams.append("roleId", filterRoleId);
+      }
+
+      // Apply advanced search filters
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+          queryParams.append(key, value);
+        }
+      });
+
+      const url = `/api/admin/rolepermission${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch assignments");
+      const data = await res.json();
+      setRolePermissions(data);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch assignments",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -206,7 +245,7 @@ export default function RolePermissionManagement() {
 
     try {
       const res = await fetch(
-        `/api/admin/rolepermission?_id=${deleteTarget.id}&deletedReason=${encodeURIComponent(reason)}`,
+        `/api/admin/rolepermission/${deleteTarget.id}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
         { method: "DELETE" },
       );
 
@@ -222,6 +261,41 @@ export default function RolePermissionManagement() {
     } finally {
       setShowLoadingModal(false);
       setDeleteTarget(null);
+    }
+  };
+
+  const handleActivateClick = (id: string, name: string) => {
+    setActivateTarget({ id, name });
+    setShowActivateModal(true);
+  };
+
+  const handleActivateConfirm = async () => {
+    if (!activateTarget) return;
+
+    setShowActivateModal(false);
+    setShowLoadingModal(true);
+
+    try {
+      const res = await fetch(
+        `/api/admin/rolepermission/${activateTarget.id}`,
+        {
+          method: "PATCH",
+        },
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to activate assignment");
+      }
+
+      await fetchRolePermissions(filterRoleId || undefined);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to activate assignment",
+      );
+    } finally {
+      setShowLoadingModal(false);
+      setActivateTarget(null);
     }
   };
 
@@ -499,7 +573,7 @@ export default function RolePermissionManagement() {
                     </svg>
                   </button>
                 )}
-                {canDelete && (
+                {canDelete && assignment.status === "ACTIVE" && (
                   <button
                     onClick={() =>
                       handleDeleteClick(
@@ -525,6 +599,34 @@ export default function RolePermissionManagement() {
                     </svg>
                   </button>
                 )}
+                {canEdit &&
+                  (assignment.status === "DELETED" ||
+                    assignment.status === "INACTIVE") && (
+                    <button
+                      onClick={() =>
+                        handleActivateClick(
+                          assignment._id,
+                          `${assignment.roleId.role} → ${assignment.pageId?.page || "N/A"} → ${assignment.permissionId.permission}`,
+                        )
+                      }
+                      className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      title="Activate Assignment"
+                    >
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  )}
               </div>
             ),
           },
@@ -549,6 +651,7 @@ export default function RolePermissionManagement() {
         exportFileName="role-permissions"
         searchPlaceholder="Search assignments..."
         itemsPerPage={10}
+        onAdvancedSearch={handleAdvancedSearch}
       />
 
       {/* Form Modal */}
@@ -687,6 +790,17 @@ export default function RolePermissionManagement() {
         message={`Are you sure you want to delete this assignment: ${deleteTarget?.name}?`}
         confirmText="Delete Assignment"
         requireReason={true}
+      />
+
+      {/* Activate Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showActivateModal}
+        onClose={() => setShowActivateModal(false)}
+        onConfirm={handleActivateConfirm}
+        title="Activate Assignment"
+        message={`Are you sure you want to activate this assignment: ${activateTarget?.name}?`}
+        confirmText="Activate"
+        requireReason={false}
       />
 
       {/* Loading Modal */}

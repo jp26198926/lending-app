@@ -21,7 +21,7 @@ interface Role {
 
 export default function RoleManagement() {
   const { loading: pageLoading, accessDenied } = usePageAccess();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user: currentUser } = useAuth();
   const router = useRouter();
   const [roles, setRoles] = useState<Role[]>([]);
   const [formData, setFormData] = useState({ role: "" });
@@ -30,8 +30,13 @@ export default function RoleManagement() {
   const [error, setError] = useState<string | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showActivateModal, setShowActivateModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [activateTarget, setActivateTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const canAdd = hasPermission("/admin/role", "Add");
   const canEdit = hasPermission("/admin/role", "Edit");
@@ -49,6 +54,31 @@ export default function RoleManagement() {
       setLoading(true);
       setError(null);
       const res = await fetch("/api/admin/role");
+      if (!res.ok) throw new Error("Failed to fetch roles");
+      const data = await res.json();
+      setRoles(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch roles");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdvancedSearch = async (filters: Record<string, string>) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Build query string from filters
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+          queryParams.append(key, value);
+        }
+      });
+
+      const url = `/api/admin/role${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch roles");
       const data = await res.json();
       setRoles(data);
@@ -101,7 +131,7 @@ export default function RoleManagement() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/admin/role?_id=${deleteTarget}&deletedReason=${encodeURIComponent(reason)}`,
+        `/api/admin/role/${deleteTarget}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
         { method: "DELETE" },
       );
 
@@ -116,6 +146,36 @@ export default function RoleManagement() {
       setError(err instanceof Error ? err.message : "Failed to delete role");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleActivateClick = (id: string, roleName: string) => {
+    setActivateTarget({ id, name: roleName });
+    setShowActivateModal(true);
+  };
+
+  const handleActivateConfirm = async () => {
+    if (!activateTarget) return;
+
+    setShowActivateModal(false);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/admin/role/${activateTarget.id}`, {
+        method: "PATCH",
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to activate role");
+      }
+
+      await fetchRoles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to activate role");
+    } finally {
+      setLoading(false);
+      setActivateTarget(null);
     }
   };
 
@@ -312,7 +372,7 @@ export default function RoleManagement() {
                     </svg>
                   </button>
                 )}
-                {canDelete && (
+                {canDelete && role.status === "ACTIVE" && (
                   <button
                     onClick={() => handleDeleteClick(role._id)}
                     className="p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -333,6 +393,28 @@ export default function RoleManagement() {
                     </svg>
                   </button>
                 )}
+                {canEdit &&
+                  (role.status === "DELETED" || role.status === "INACTIVE") && (
+                    <button
+                      onClick={() => handleActivateClick(role._id, role.role)}
+                      className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      title="Activate Role"
+                    >
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  )}
               </div>
             ),
           },
@@ -357,6 +439,7 @@ export default function RoleManagement() {
         exportFileName="roles"
         searchPlaceholder="Search roles..."
         itemsPerPage={10}
+        onAdvancedSearch={handleAdvancedSearch}
       />
 
       {/* Form Modal */}
@@ -416,6 +499,22 @@ export default function RoleManagement() {
         confirmText="Delete"
         cancelText="Cancel"
         requireReason={true}
+        isLoading={loading}
+      />
+
+      {/* Activate Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showActivateModal}
+        onClose={() => {
+          setShowActivateModal(false);
+          setActivateTarget(null);
+        }}
+        onConfirm={handleActivateConfirm}
+        title="Activate Role"
+        message={`Are you sure you want to activate ${activateTarget?.name}?`}
+        confirmText="Activate"
+        cancelText="Cancel"
+        requireReason={false}
         isLoading={loading}
       />
 

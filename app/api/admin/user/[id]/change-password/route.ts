@@ -25,10 +25,10 @@ export async function POST(
 
     const { oldPassword, newPassword, updatedBy } = body;
 
-    // Validate input
-    if (!oldPassword || !newPassword) {
+    // Validate input - newPassword is required, oldPassword is optional (for admin override)
+    if (!newPassword) {
       return NextResponse.json(
-        { error: "Old password and new password are required" },
+        { error: "New password is required" },
         { status: 400 },
       );
     }
@@ -47,14 +47,16 @@ export async function POST(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Verify old password
-    const isPasswordValid = await user.comparePassword(oldPassword);
+    // Verify old password only if provided
+    if (oldPassword) {
+      const isPasswordValid = await user.comparePassword(oldPassword);
 
-    if (!isPasswordValid) {
-      return NextResponse.json(
-        { error: "Current password is incorrect" },
-        { status: 401 },
-      );
+      if (!isPasswordValid) {
+        return NextResponse.json(
+          { error: "Current password is incorrect" },
+          { status: 401 },
+        );
+      }
     }
 
     // Update password

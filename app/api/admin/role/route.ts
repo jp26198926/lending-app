@@ -13,9 +13,26 @@ export async function GET(request: NextRequest) {
 
   try {
     await dbConnect();
-    const records = await Role.find({ status: RoleStatus.ACTIVE })
-      .sort({ createdAt: 1 })
-      .lean();
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get("status");
+    const role = searchParams.get("role");
+
+    // Build filter
+    const filter: Record<string, unknown> = {};
+
+    // if (status) {
+    //   filter.status = { $regex: status, $options: "i" };
+    // } else {
+    //   // By default, show only ACTIVE roles
+    //   filter.status = RoleStatus.ACTIVE;
+    // }
+
+    if (role) {
+      filter.role = { $regex: role, $options: "i" };
+    }
+
+    const records = await Role.find(filter).sort({ createdAt: 1 }).lean();
     return NextResponse.json(records);
   } catch (error) {
     console.error("Error fetching roles:", error);

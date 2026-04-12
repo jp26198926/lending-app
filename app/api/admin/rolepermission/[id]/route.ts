@@ -23,7 +23,7 @@ export async function GET(
 
     const record = await RolePermission.findOne({
       _id: id,
-      status: RolePermissionStatus.ACTIVE,
+      // status: RolePermissionStatus.ACTIVE,
     })
       .populate("roleId", "role status")
       .populate("pageId", "page path status")
@@ -71,7 +71,7 @@ export async function PUT(
     if (body.permissionId) updateData.permissionId = body.permissionId;
 
     const updatedRecord = await RolePermission.findOneAndUpdate(
-      { _id: id, status: RolePermissionStatus.ACTIVE },
+      { _id: id /* status: RolePermissionStatus.ACTIVE */ },
       updateData,
       { new: true, runValidators: true },
     )
@@ -149,6 +149,50 @@ export async function DELETE(
     console.error("Error deleting role-permission assignment:", error);
     return NextResponse.json(
       { error: "Failed to delete role-permission assignment" },
+      { status: 500 },
+    );
+  }
+}
+
+// PATCH - Activate role-permission assignment by ID (opposite of soft delete)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  // Check authentication and permission (using Edit permission)
+  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
+  if (error) return error;
+
+  try {
+    await dbConnect();
+    const { id } = await params;
+
+    const activatedRecord = await RolePermission.findByIdAndUpdate(
+      id,
+      {
+        status: RolePermissionStatus.ACTIVE,
+        deletedAt: null,
+        deletedBy: null,
+        deletedReason: null,
+      },
+      { new: true },
+    )
+      .populate("roleId", "role status")
+      .populate("pageId", "page path status")
+      .populate("permissionId", "permission status");
+
+    if (!activatedRecord) {
+      return NextResponse.json(
+        { error: "Assignment not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json(activatedRecord);
+  } catch (error) {
+    console.error("Error activating role-permission assignment:", error);
+    return NextResponse.json(
+      { error: "Failed to activate role-permission assignment" },
       { status: 500 },
     );
   }

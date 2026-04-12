@@ -13,9 +13,26 @@ export async function GET(request: NextRequest) {
 
   try {
     await dbConnect();
-    const records = await Permission.find({ status: PermissionStatus.ACTIVE })
-      .sort({ createdAt: 1 })
-      .lean();
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get("status");
+    const permission = searchParams.get("permission");
+
+    // Build filter
+    const filter: Record<string, unknown> = {};
+
+    // if (status) {
+    //   filter.status = { $regex: status, $options: "i" };
+    // } else {
+    //   // By default, show only ACTIVE permissions
+    //   filter.status = PermissionStatus.ACTIVE;
+    // }
+
+    if (permission) {
+      filter.permission = { $regex: permission, $options: "i" };
+    }
+
+    const records = await Permission.find(filter).sort({ createdAt: 1 }).lean();
     return NextResponse.json(records);
   } catch (error) {
     console.error("Error fetching records:", error);
@@ -50,7 +67,7 @@ export async function POST(request: NextRequest) {
       error.code === 11000
     ) {
       return NextResponse.json(
-        { error: "Path already exists" },
+        { error: "Permission already exists" },
         { status: 409 },
       );
     }

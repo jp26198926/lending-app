@@ -21,7 +21,7 @@ interface Permission {
 
 export default function PermissionManagement() {
   const { loading: pageLoading, accessDenied } = usePageAccess();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user: currentUser } = useAuth();
   const router = useRouter();
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [formData, setFormData] = useState({ permission: "" });
@@ -30,8 +30,13 @@ export default function PermissionManagement() {
   const [error, setError] = useState<string | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showActivateModal, setShowActivateModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [activateTarget, setActivateTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const canAdd = hasPermission("/admin/permission", "Add");
   const canEdit = hasPermission("/admin/permission", "Edit");
@@ -49,6 +54,33 @@ export default function PermissionManagement() {
       setLoading(true);
       setError(null);
       const res = await fetch("/api/admin/permission");
+      if (!res.ok) throw new Error("Failed to fetch permissions");
+      const data = await res.json();
+      setPermissions(data);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch permissions",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdvancedSearch = async (filters: Record<string, string>) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Build query string from filters
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+          queryParams.append(key, value);
+        }
+      });
+
+      const url = `/api/admin/permission${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch permissions");
       const data = await res.json();
       setPermissions(data);
@@ -103,7 +135,7 @@ export default function PermissionManagement() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/admin/permission?_id=${deleteTarget}&deletedReason=${encodeURIComponent(reason)}`,
+        `/api/admin/permission/${deleteTarget}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
         { method: "DELETE" },
       );
 
@@ -120,6 +152,38 @@ export default function PermissionManagement() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleActivateClick = (id: string, permissionName: string) => {
+    setActivateTarget({ id, name: permissionName });
+    setShowActivateModal(true);
+  };
+
+  const handleActivateConfirm = async () => {
+    if (!activateTarget) return;
+
+    setShowActivateModal(false);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/admin/permission/${activateTarget.id}`, {
+        method: "PATCH",
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to activate permission");
+      }
+
+      await fetchPermissions();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to activate permission",
+      );
+    } finally {
+      setLoading(false);
+      setActivateTarget(null);
     }
   };
 
@@ -320,7 +384,7 @@ export default function PermissionManagement() {
                     </svg>
                   </button>
                 )}
-                {canDelete && (
+                {canDelete && permission.status === "ACTIVE" && (
                   <button
                     onClick={() => handleDeleteClick(permission._id)}
                     className="p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -341,6 +405,34 @@ export default function PermissionManagement() {
                     </svg>
                   </button>
                 )}
+                {canEdit &&
+                  (permission.status === "DELETED" ||
+                    permission.status === "INACTIVE") && (
+                    <button
+                      onClick={() =>
+                        handleActivateClick(
+                          permission._id,
+                          permission.permission,
+                        )
+                      }
+                      className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      title="Activate Permission"
+                    >
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  )}
               </div>
             ),
           },
@@ -365,6 +457,7 @@ export default function PermissionManagement() {
         exportFileName="permissions"
         searchPlaceholder="Search permissions..."
         itemsPerPage={10}
+        onAdvancedSearch={handleAdvancedSearch}
       />
 
       {/* Form Modal */}
@@ -424,6 +517,22 @@ export default function PermissionManagement() {
         confirmText="Delete"
         cancelText="Cancel"
         requireReason={true}
+        isLoading={loading}
+      />
+
+      {/* Activate Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showActivateModal}
+        onClose={() => {
+          setShowActivateModal(false);
+          setActivateTarget(null);
+        }}
+        onConfirm={handleActivateConfirm}
+        title="Activate Permission"
+        message={`Are you sure you want to activate ${activateTarget?.name}?`}
+        confirmText="Activate"
+        cancelText="Cancel"
+        requireReason={false}
         isLoading={loading}
       />
 

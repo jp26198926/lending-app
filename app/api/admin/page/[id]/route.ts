@@ -20,7 +20,7 @@ export async function GET(
 
     const record = await Page.findOne({
       _id: id,
-      status: PageStatus.ACTIVE,
+      // status: PageStatus.ACTIVE,
     }).lean();
 
     if (!record) {
@@ -52,7 +52,7 @@ export async function PUT(
     const body = await request.json();
 
     const updatedRecord = await Page.findOneAndUpdate(
-      { _id: id, status: PageStatus.ACTIVE },
+      { _id: id /* status: PageStatus.ACTIVE */ },
       {
         page: body.page,
         path: body.path,
@@ -118,6 +118,44 @@ export async function DELETE(
     console.error("Error deleting page:", error);
     return NextResponse.json(
       { error: "Failed to delete page" },
+      { status: 500 },
+    );
+  }
+}
+
+// PATCH - Activate page by ID (opposite of soft delete)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  // Check authentication and permission (using Edit permission)
+  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
+  if (error) return error;
+
+  try {
+    await dbConnect();
+    const { id } = await params;
+
+    const activatedRecord = await Page.findByIdAndUpdate(
+      id,
+      {
+        status: PageStatus.ACTIVE,
+        deletedAt: null,
+        deletedBy: null,
+        deletedReason: null,
+      },
+      { new: true },
+    );
+
+    if (!activatedRecord) {
+      return NextResponse.json({ error: "Page not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(activatedRecord);
+  } catch (error) {
+    console.error("Error activating page:", error);
+    return NextResponse.json(
+      { error: "Failed to activate page" },
       { status: 500 },
     );
   }

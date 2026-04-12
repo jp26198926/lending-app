@@ -125,3 +125,41 @@ export async function DELETE(
     );
   }
 }
+
+// PATCH - Activate role by ID (opposite of soft delete)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  // Check authentication and permission (using Edit permission)
+  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
+  if (error) return error;
+
+  try {
+    await dbConnect();
+    const { id } = await params;
+
+    const activatedRecord = await Role.findByIdAndUpdate(
+      id,
+      {
+        status: RoleStatus.ACTIVE,
+        deletedAt: null,
+        deletedBy: null,
+        deletedReason: null,
+      },
+      { new: true },
+    );
+
+    if (!activatedRecord) {
+      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(activatedRecord);
+  } catch (error) {
+    console.error("Error activating role:", error);
+    return NextResponse.json(
+      { error: "Failed to activate role" },
+      { status: 500 },
+    );
+  }
+}

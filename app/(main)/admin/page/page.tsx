@@ -24,7 +24,7 @@ interface PageModel {
 
 export default function PageManagement() {
   const { loading: pageLoading, accessDenied } = usePageAccess();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user: currentUser } = useAuth();
   const router = useRouter();
   const [pages, setPages] = useState<PageModel[]>([]);
   const [formData, setFormData] = useState({
@@ -38,8 +38,13 @@ export default function PageManagement() {
   const [error, setError] = useState<string | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showActivateModal, setShowActivateModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [activateTarget, setActivateTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const canAdd = hasPermission("/admin/page", "Add");
   const canEdit = hasPermission("/admin/page", "Edit");
@@ -57,6 +62,31 @@ export default function PageManagement() {
       setLoading(true);
       setError(null);
       const res = await fetch("/api/admin/page");
+      if (!res.ok) throw new Error("Failed to fetch pages");
+      const data = await res.json();
+      setPages(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch pages");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdvancedSearch = async (filters: Record<string, string>) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Build query string from filters
+      const queryParams = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+          queryParams.append(key, value);
+        }
+      });
+
+      const url = `/api/admin/page${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch pages");
       const data = await res.json();
       setPages(data);
@@ -109,7 +139,7 @@ export default function PageManagement() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/admin/page?_id=${deleteTarget}&deletedReason=${encodeURIComponent(reason)}`,
+        `/api/admin/page/${deleteTarget}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
         { method: "DELETE" },
       );
 
@@ -124,6 +154,36 @@ export default function PageManagement() {
       setError(err instanceof Error ? err.message : "Failed to delete page");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleActivateClick = (id: string, pageName: string) => {
+    setActivateTarget({ id, name: pageName });
+    setShowActivateModal(true);
+  };
+
+  const handleActivateConfirm = async () => {
+    if (!activateTarget) return;
+
+    setShowActivateModal(false);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`/api/admin/page/${activateTarget.id}`, {
+        method: "PATCH",
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to activate page");
+      }
+
+      await fetchPages();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to activate page");
+    } finally {
+      setLoading(false);
+      setActivateTarget(null);
     }
   };
 
@@ -329,7 +389,7 @@ export default function PageManagement() {
                     </svg>
                   </button>
                 )}
-                {canDelete && (
+                {canDelete && pageItem.status === "ACTIVE" && (
                   <button
                     onClick={() => handleDeleteClick(pageItem._id)}
                     className="p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -350,6 +410,31 @@ export default function PageManagement() {
                     </svg>
                   </button>
                 )}
+                {canEdit &&
+                  (pageItem.status === "DELETED" ||
+                    pageItem.status === "INACTIVE") && (
+                    <button
+                      onClick={() =>
+                        handleActivateClick(pageItem._id, pageItem.page)
+                      }
+                      className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                      title="Activate Page"
+                    >
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </button>
+                  )}
               </div>
             ),
           },
@@ -374,6 +459,7 @@ export default function PageManagement() {
         exportFileName="pages"
         searchPlaceholder="Search pages..."
         itemsPerPage={10}
+        onAdvancedSearch={handleAdvancedSearch}
       />
 
       {/* Form Modal */}
@@ -499,6 +585,22 @@ export default function PageManagement() {
         confirmText="Delete"
         cancelText="Cancel"
         requireReason={true}
+        isLoading={loading}
+      />
+
+      {/* Activate Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showActivateModal}
+        onClose={() => {
+          setShowActivateModal(false);
+          setActivateTarget(null);
+        }}
+        onConfirm={handleActivateConfirm}
+        title="Activate Page"
+        message={`Are you sure you want to activate ${activateTarget?.name}?`}
+        confirmText="Activate"
+        cancelText="Cancel"
+        requireReason={false}
         isLoading={loading}
       />
 

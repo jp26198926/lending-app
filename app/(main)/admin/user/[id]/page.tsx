@@ -18,6 +18,7 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { LoadingSpinner, StatusBadge } from "@/components/CRUDComponents";
+import ErrorModal from "@/components/ErrorModal";
 
 interface User {
   _id: string;
@@ -68,6 +69,10 @@ export default function UserDetailPage() {
 
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorModal, setErrorModal] = useState({
+    isOpen: false,
+    message: "",
+  });
 
   useEffect(() => {
     if (id) {
@@ -77,23 +82,24 @@ export default function UserDetailPage() {
 
   const fetchUser = async () => {
     try {
-      const res = await fetch(`/api/admin/user?_id=${id}`);
+      const res = await fetch(`/api/admin/user/${id}`);
       const data = await res.json();
 
-      // The API returns an array, find the specific user
-      const foundUser = Array.isArray(data)
-        ? data.find((u: User) => u._id === id)
-        : data;
-
-      if (foundUser) {
-        setUser(foundUser);
+      if (data) {
+        setUser(data);
       } else {
-        alert("User not found");
-        router.push("/admin/user");
+        setErrorModal({
+          isOpen: true,
+          message: "User not found. Redirecting to user list...",
+        });
+        setTimeout(() => router.push("/admin/user"), 2000);
       }
     } catch (error) {
       console.error("Error fetching user:", error);
-      alert("Failed to fetch user details");
+      setErrorModal({
+        isOpen: true,
+        message: "Failed to fetch user details. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
@@ -371,6 +377,13 @@ export default function UserDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ isOpen: false, message: "" })}
+        message={errorModal.message}
+      />
     </div>
   );
 }

@@ -20,11 +20,18 @@ export async function GET(request: NextRequest) {
     const roleId = searchParams.get("roleId");
     const pageId = searchParams.get("pageId");
     const permissionId = searchParams.get("permissionId");
+    const status = searchParams.get("status");
 
     // Build query based on filters
-    const query: Record<string, unknown> = {
-      status: RolePermissionStatus.ACTIVE,
-    };
+    const query: Record<string, unknown> = {};
+
+    // if (status) {
+    //   query.status = { $regex: status, $options: "i" };
+    // } else {
+    //   // By default, show only ACTIVE assignments
+    //   query.status = RolePermissionStatus.ACTIVE;
+    // }
+
     if (roleId) query.roleId = roleId;
     if (pageId) query.pageId = pageId;
     if (permissionId) query.permissionId = permissionId;

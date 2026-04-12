@@ -31,6 +31,7 @@ interface DataTableProps<T> {
   exportFileName?: string;
   searchPlaceholder?: string;
   onRowClick?: (item: T) => void;
+  onAdvancedSearch?: (filters: Record<string, string>) => void;
 }
 
 export default function DataTable<T extends { _id?: string; id?: string }>({
@@ -43,6 +44,7 @@ export default function DataTable<T extends { _id?: string; id?: string }>({
   exportFileName = "export",
   searchPlaceholder = "Search...",
   onRowClick,
+  onAdvancedSearch,
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -396,6 +398,11 @@ export default function DataTable<T extends { _id?: string; id?: string }>({
   };
 
   const handleApplyAdvancedFilters = () => {
+    // If onAdvancedSearch callback is provided, use it (server-side filtering)
+    if (onAdvancedSearch) {
+      onAdvancedSearch(advancedFilters);
+    }
+    // Otherwise, filters are applied via useMemo (client-side filtering)
     setShowAdvancedSearch(false);
     setCurrentPage(1);
   };
@@ -403,6 +410,10 @@ export default function DataTable<T extends { _id?: string; id?: string }>({
   const handleClearAdvancedFilters = () => {
     setAdvancedFilters({});
     setCurrentPage(1);
+    // If onAdvancedSearch callback is provided, reset to unfiltered data
+    if (onAdvancedSearch) {
+      onAdvancedSearch({});
+    }
   };
 
   if (loading) {

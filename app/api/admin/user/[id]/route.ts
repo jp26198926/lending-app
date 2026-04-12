@@ -21,7 +21,7 @@ export async function GET(
 
     const user = await User.findOne({
       _id: id,
-      status: { $ne: UserStatus.DELETED },
+      // status: { $ne: UserStatus.DELETED },
     })
       .populate("roleId", "role status")
       .populate("createdBy", "firstName lastName email")
@@ -84,7 +84,7 @@ export async function PUT(
       const existingUser = await User.findOne({
         email: email.toLowerCase().trim(),
         _id: { $ne: id },
-        status: { $ne: UserStatus.DELETED },
+        // status: { $ne: UserStatus.DELETED },
       });
 
       if (existingUser) {
@@ -172,6 +172,50 @@ export async function DELETE(
     console.error("Error deleting user:", error);
     return NextResponse.json(
       { error: "Failed to delete user" },
+      { status: 500 },
+    );
+  }
+}
+
+// PATCH - Activate user by ID (opposite of soft delete)
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  // Check authentication and permission (using Edit permission)
+  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
+  if (error) return error;
+
+  try {
+    await connectDB();
+    const { id } = await params;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Activate the user
+    user.status = UserStatus.ACTIVE;
+    user.deletedAt = null;
+    user.deletedBy = null;
+    user.deletedReason = null;
+
+    await user.save();
+
+    // Populate and return without password
+    const activatedUser = await User.findById(id)
+      .populate("roleId", "role status")
+      .populate("createdBy", "firstName lastName email")
+      .populate("updatedBy", "firstName lastName email")
+      .select("-password");
+
+    return NextResponse.json(activatedUser, { status: 200 });
+  } catch (error) {
+    console.error("Error activating user:", error);
+    return NextResponse.json(
+      { error: "Failed to activate user" },
       { status: 500 },
     );
   }
