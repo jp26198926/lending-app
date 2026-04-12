@@ -57,7 +57,7 @@ export async function PUT(
         role: body.role,
         updatedBy: body.updatedBy || null,
       },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedRecord) {

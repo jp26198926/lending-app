@@ -59,7 +59,7 @@ export async function PUT(
         parentId: body.parentId || null,
         order: body.order,
       },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedRecord) {

@@ -103,13 +103,19 @@ export default function PageManagement() {
     setShowLoadingModal(true);
 
     try {
+      const url = editingId
+        ? `/api/admin/page/${editingId}`
+        : "/api/admin/page";
       const method = editingId ? "PUT" : "POST";
-      const body = editingId ? { _id: editingId, ...formData } : formData;
+      const payload = {
+        ...formData,
+        [editingId ? "updatedBy" : "createdBy"]: currentUser?._id,
+      };
 
-      const res = await fetch("/api/admin/page", {
+      const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {

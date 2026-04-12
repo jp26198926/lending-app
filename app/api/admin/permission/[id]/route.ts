@@ -59,7 +59,7 @@ export async function PUT(
       {
         permission: body.permission,
       },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedRecord) {

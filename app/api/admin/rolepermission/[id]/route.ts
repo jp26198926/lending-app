@@ -73,7 +73,7 @@ export async function PUT(
     const updatedRecord = await RolePermission.findOneAndUpdate(
       { _id: id /* status: RolePermissionStatus.ACTIVE */ },
       updateData,
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     )
       .populate("roleId", "role status")
       .populate("pageId", "page path status")
