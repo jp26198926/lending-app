@@ -14,6 +14,28 @@ This version has breaking changes — conventions and classnames may all differ 
 
 ---
 
+## Theme & Design System
+
+### Color Scheme - Zentyal Orange & Yellow-Green
+
+```css
+--zentyal-dark: #2d3748; /* Dark text, headers */
+--zentyal-primary: #ff6f00; /* Orange - Primary actions, branding */
+--zentyal-accent: #a4c639; /* Yellow-Green - Secondary elements */
+--zentyal-light: #f5f7fa; /* Light backgrounds */
+--zentyal-gray: #6b7280; /* Muted text */
+```
+
+### Mobile-First Responsive Design
+
+- **Icons only on mobile** (<640px): `<span className="hidden sm:inline">Button Text</span>`
+- **Full-width buttons on mobile**: `className="w-full sm:w-auto"`
+- **Flexible layouts**: `className="flex-col sm:flex-row"`
+- **DataTable mobile cards**: Automatic switch at `md` breakpoint (768px)
+- **Glassmorphism effects**: `bg-black/30 backdrop-blur-md` for modal backdrops
+
+---
+
 ## App Features
 
 ### Authentication & Authorization System
@@ -52,10 +74,46 @@ This version has breaking changes — conventions and classnames may all differ 
 
 ### Dynamic Navigation
 
-- Database-driven navigation menu
+- **Sidebar navigation** with collapsible desktop mode and mobile drawer
+- Database-driven navigation menu from user permissions
 - Permission-based link visibility
 - Automatic menu generation from user's role permissions
 - SPA-style navigation without page reloads
+- Active route highlighting
+
+### Advanced Data Table Features
+
+- **Pagination**: 10 items per page with smart page number display
+- **Search**: Global search across all searchable columns
+- **Advanced Search Modal**: Column-specific filtering with active filter badges
+- **Sorting**: Click column headers to sort (asc/desc toggle)
+- **CSV Export**: Export filtered/sorted data to CSV file
+- **Professional Print**: Portrait-oriented print template with:
+  - Company header with branding
+  - Summary statistics cards (total records, page info)
+  - Themed table layout (orange/yellow-green)
+  - Auto-print workflow
+- **Mobile Card View**: Responsive card layout for mobile (<768px)
+- **Desktop Table View**: Traditional table for larger screens (≥768px)
+- **Loading States**: Skeleton screens and spinners
+- **Empty States**: Custom icons and messages
+
+### UI/UX Components
+
+- **Modal System**:
+  - Base Modal with glassmorphism backdrop (`bg-black/30 backdrop-blur-md`)
+  - LoadingModal - Full-screen loading overlay
+  - ConfirmModal - Confirmation dialog with optional reason input
+  - Advanced Search Modal - Column-specific filters
+- **Reusable CRUD Components**:
+  - StatusBadge - Color-coded status indicators (ACTIVE/INACTIVE/DELETED)
+  - LoadingSpinner - Centered loading animation
+  - CRUDTable - Basic table component (deprecated in favor of DataTable)
+- **Form Components**:
+  - Input fields with validation
+  - Select dropdowns
+  - Textarea with auto-resize
+  - File uploads
 
 ### Security Features
 
@@ -118,7 +176,19 @@ lending-app/
 │   │
 │   ├── api/                             # API routes
 │   │   ├── auth/                        # Authentication endpoints
-│   │   │   ├── login/
+│   │   Sidebar.tsx                      # Collapsible sidebar with mobile drawer
+│   ├── nav.tsx                          # Top navigation bar (deprecated - use Sidebar)
+│   ├── DataTable.tsx                    # Advanced table component (~850 lines)
+│   │   - Features: pagination, search, advanced filters, export, print
+│   │   - Mobile card view + desktop table view
+│   │   - Generic TypeScript implementation
+│   ├── Modal.tsx                        # Base modal with glassmorphism backdrop
+│   ├── LoadingModal.tsx                 # Full-screen loading overlay
+│   ├── ConfirmModal.tsx                 # Confirmation dialog with reason input
+│   ├── CRUDComponents.tsx               # Reusable components:
+│   │   - StatusBadge (color-coded status)
+│   │   - LoadingSpinner (centered animation)
+│   │   - CRUDTable (deprecated - use DataTable)
 │   │   │   │   └── route.ts            # POST - Login with permissions
 │   │   │   ├── logout/
 │   │   │   │   └── route.ts            # POST - Logout
@@ -599,20 +669,263 @@ All models use soft delete:
 
 ### Debugging Permission Issues
 
-1. **Check user login** - GET /api/auth/session
-2. **Verify permissions array** - Should contain page + permissions
-3. **Check page path** - Must match exactly (case-sensitive)
-4. **Check permission name** - Case-insensitive comparison
-5. **Verify RolePermission** - status must be "ACTIVE"
-6. **Check Page status** - Page must be "ACTIVE"
+---
+
+## Component Usage Patterns
+
+### DataTable Component
+
+**Complete implementation with all features:**
+
+```typescript
+import DataTable, { Column } from "@/components/DataTable";
+
+interface MyData {
+  _id: string;
+  name: string;
+  email: string;
+  status: string;
+}
+
+const columns: Column<MyData>[] = [
+  { key: "name", label: "Name", sortable: true, searchable: true },
+  { key: "email", label: "Email", sortable: true, searchable: true },
+  {
+    key: "status",
+    label: "Status",
+    sortable: true,
+    searchable: true,
+    render: (item) => <StatusBadge status={item.status} />
+  },
+  {
+    key: "actions",
+    label: "Actions",
+    sortable: false,
+    searchable: false,
+    render: (item) => (
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={() => handleView(item._id)}>View</button>
+        <button onClick={() => handleEdit(item._id)}>Edit</button>
+      </div>
+    )
+  }
+];
+
+<DataTable
+  data={myData}
+  columns={columns}
+  itemsPerPage={10}
+  loading={loading}
+  emptyMessage="No records found"
+  exportFileName="my-data-export"
+  searchPlaceholder="Search records..."
+  onRowClick={(item) => router.push(`/detail/${item._id}`)}
+/>
+```
+
+**Features automatically included:**
+
+- ✅ Pagination (10 items/page, smart page number display)
+- ✅ Global search (searches all searchable columns)
+- ✅ Advanced search modal (column-specific filters)
+- ✅ Column sorting (click headers to toggle asc/desc)
+- ✅ CSV export (with filtered/sorted data)
+- ✅ Professional print (portrait, themed with orange/yellow-green)
+- ✅ Mobile card view (<768px): stacked label-value pairs
+- ✅ Desktop table view (≥768px): traditional table layout
+- ✅ Loading states and empty states
+
+### Modal Components
+
+**Base Modal with Glassmorphism:**
+
+```typescript
+import Modal from "@/components/Modal";
+
+<Modal
+  isOpen={isOpen}
+  onClose={() => setIsOpen(false)}
+  title="My Modal"
+  size="md" // sm | md | lg | xl
+  showClose={true}
+>
+  <div>Modal content here</div>
+</Modal>
+```
+
+**Loading Modal:**
+
+```typescript
+import LoadingModal from "@/components/LoadingModal";
+
+<LoadingModal
+  isOpen={isLoading}
+  message="Processing your request..."
+/>
+```
+
+**Confirm Modal:**
+
+```typescript
+import ConfirmModal from "@/components/ConfirmModal";
+
+<ConfirmModal
+  isOpen={showConfirm}
+  onClose={() => setShowConfirm(false)}
+  onConfirm={(reason) => handleDelete(id, reason)}
+  title="Delete Record"
+  message="Are you sure you want to delete this record?"
+  confirmText="Delete"
+  cancelText="Cancel"
+  requireReason={true} // Shows textarea for deletion reason
+  isLoading={deleting}
+/>
+```
+
+### Sidebar Navigation
+
+**Automatic integration:**
+
+- Included in `app/(main)/layout.tsx`
+- Builds links from user's permissions
+- Desktop: Collapsible sidebar (toggle button)
+- Mobile: Drawer that slides in from left
+- Active route highlighting
+- Permission-based visibility
+
+### Reusable Components
+
+**StatusBadge:**
+
+```typescript
+import { StatusBadge } from "@/components/CRUDComponents";
+
+<StatusBadge status="ACTIVE" />   // Green badge
+<StatusBadge status="INACTIVE" /> // Gray badge
+<StatusBadge status="DELETED" />  // Red badge
+```
+
+**LoadingSpinner:**
+
+```typescript
+import { LoadingSpinner } from "@/components/CRUDComponents";
+
+if (loading) return <LoadingSpinner />;
+```
 
 ---
 
-## Database Schema Summary
+## Mobile Responsive Patterns
 
-### User
+### Button Text Hiding on Mobile
 
-- Authentication: email, password (hashed)
+```typescript
+// Icon always visible, text hidden on mobile
+<button className="flex items-center gap-2">
+  <PencilIcon className="h-5 w-5" />
+  <span className="hidden sm:inline">Edit User</span>
+</button>
+```
+
+### Full-Width Buttons on Mobile
+
+```typescript
+// Full width on mobile, auto width on desktop
+<button className="w-full sm:w-auto px-3 sm:px-4 py-2">
+  Submit
+</button>
+```
+
+### Flexible Layouts
+
+```typescript
+// Stack vertically on mobile, horizontal on desktop
+<div className="flex flex-col sm:flex-row gap-3">
+  <button>Button 1</button>
+  <button>Button 2</button>
+</div>
+```
+
+### Responsive Padding and Sizing
+
+```typescript
+// Smaller padding on mobile
+<div className="px-3 sm:px-6 py-2 sm:py-4">
+  Content
+</div>
+
+// Smaller text on mobile
+<h1 className="text-xl sm:text-2xl md:text-3xl">
+  Heading
+</h1>
+```
+
+---
+
+## Print Template Customization
+
+**Current print template features:**
+
+- **Portrait orientation** (`@page { size: portrait; }`)
+- **Themed colors**: Orange (#ff6f00) headers, Yellow-green (#a4c639) accents
+- **Company header**: Logo placeholder, name, contact info, date/time
+- **Summary statistics**: Total records, current page, records shown
+- **Professional table**: Striped rows, styled headers, proper spacing
+- **Footer**: Legal text, copyright
+
+**Print is triggered by:**
+
+- Click "Print" button in DataTable (next to "Advanced Search")
+- Auto-opens new window with formatted template
+- Auto-triggers print dialog
+- Auto-closes window after print/cancel
+
+---
+
+## Environment Variables
+
+Required in `.env.local`:
+
+```env
+# Database
+MONGODB_URI=mongodb://localhost:27017/lending-app
+
+# Authentication
+JWT_SECRET=your-secret-key-change-in-production
+JWT_EXPIRES_IN=7d
+
+# Node Environment
+NODE_ENV=development
+```
+
+---
+
+## Recent Updates (Last Modified: 2026-04-12)
+
+### ✅ Completed Features
+
+- Mobile-responsive design across all pages
+- Sidebar navigation with collapsible/drawer modes
+- DataTable component with advanced features:
+  - Advanced search modal with column-specific filters
+  - Professional print templates (portrait, themed)
+  - Mobile card view + desktop table view
+  - CSV export with filtered data
+- Modal system with glassmorphism effects
+- Reusable CRUD components (StatusBadge, LoadingSpinner)
+- Confirmation modals with optional reason input
+- Full-width button layouts on mobile detail pages
+- Icon-only buttons on mobile views
+- Orange/Yellow-green theme integration throughout
+
+### 🎯 Key Implementation Notes
+
+- All admin pages use DataTable component - updates propagate automatically
+- Sidebar replaces top nav component
+- All modals use glassmorphism backdrop: `bg-black/30 backdrop-blur-md`
+- Print templates use portrait orientation with app theme colors
+- Mobile breakpoint: 640px (sm), 768px (md), 1024px (lg)
+- All detail page buttons: full-width on mobile, center-justified contentuthentication: email, password (hashed)
 - Profile: firstName, lastName, phone
 - Financial: rate, cashReceivable, capitalContribution, profitEarned
 - Relations: roleId → Role
