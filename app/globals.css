@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Zentyal Linux Server Color Scheme - Orange & Yellow-Green */
+:root {
+  --zentyal-dark: #2d3748;
+  --zentyal-primary: #ff6f00;
+  --zentyal-accent: #a4c639;
+  --zentyal-light: #f5f7fa;
+  --zentyal-gray: #6b7280;
+  --zentyal-success: #28a745;
+  --zentyal-warning: #ffc107;
+  --zentyal-danger: #dc3545;
+  --zentyal-info: #ff6f00;
+}
+
+@theme inline {
+  /* Zentyal Colors - Orange & Yellow-Green Theme */
+  --color-zentyal-dark: #2d3748;
+  --color-zentyal-primary: #ff6f00;
+  --color-zentyal-accent: #a4c639;
+  --color-zentyal-light: #f5f7fa;
+  --color-zentyal-gray: #6b7280;
+  --color-zentyal-success: #28a745;
+  --color-zentyal-warning: #ffc107;
+  --color-zentyal-danger: #dc3545;
+  --color-zentyal-info: #ff6f00;
+
+  /* Fonts */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* DO NOT use * reset - it breaks Tailwind utilities! */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--zentyal-light);
+  color: #1f2937;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  line-height: 1.6;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--zentyal-gray);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--zentyal-primary);
+}
