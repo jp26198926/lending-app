@@ -900,6 +900,573 @@ NODE_ENV=development
 
 ---
 
+## Database Standards - MongoDB Transactions
+
+### Transaction Requirements
+
+**ALL database operations MUST use MongoDB transactions to ensure data consistency and ACID compliance.**
+
+### Why Transactions Are Mandatory
+
+- **Data Integrity**: Prevent partial updates when multiple documents/collections are involved
+- **Atomicity**: All-or-nothing execution - either all operations succeed or all are rolled back
+- **Consistency**: Maintain referential integrity across related documents
+- **Audit Trail**: Ensure audit fields (createdBy, updatedBy, deletedBy) are consistently applied
+- **Error Recovery**: Automatic rollback on any failure prevents inconsistent state
+
+### When to Use Transactions
+
+**ALWAYS use transactions for:**
+
+- ✅ Create operations (POST) - Creates record with audit fields
+- ✅ Update operations (PUT/PATCH) - Updates record with audit fields
+- ✅ Delete operations (DELETE) - Soft delete with audit fields
+- ✅ Multi-document operations - Any operation affecting multiple documents
+- ✅ Operations with business logic - Complex operations requiring consistency
+- ✅ Cross-collection updates - Updates spanning multiple collections
+
+**Transactions NOT required for:**
+
+- ❌ Simple read operations (GET) - Single document or list queries
+- ❌ Session/authentication checks - Read-only token verification
+- ❌ Public data queries - Non-sensitive read operations
+
+### Standard Transaction Pattern
+
+**ALWAYS follow this pattern for write operations:**
+
+```typescript
+import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
+import connectDB from "@/lib/mongodb";
+import { withAuth } from "@/lib/apiAuth";
+import YourModel from "@/models/YourModel";
+
+const PAGE_PATH = "/admin/your-resource";
+
+export async function POST(request: NextRequest) {
+  // 1. Authentication & authorization check
+  const { user, error } = await withAuth(request, PAGE_PATH);
+  if (error) return error;
+
+  // 2. Start session for transaction
+  const session = await mongoose.startSession();
+
+  try {
+    // 3. Start transaction
+    await session.startTransaction();
+
+    // 4. Parse and validate input
+    const body = await request.json();
+    const { field1, field2, field3 } = body;
+
+    // Basic validation
+    if (!field1 || !field2) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Required fields missing" },
+        { status: 400 },
+      );
+    }
+
+    // 5. Connect to database
+    await connectDB();
+
+    // 6. Business logic validation (within transaction)
+    const existingRecord = await YourModel.findOne({
+      field1,
+      status: { $ne: "DELETED" },
+    }).session(session);
+
+    if (existingRecord) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Record already exists" },
+        { status: 409 },
+      );
+    }
+
+    // 7. Create/update operations (with session)
+    const newRecord = await YourModel.create(
+      [
+        {
+          field1,
+          field2,
+          field3,
+          status: "ACTIVE",
+          createdBy: user._id,
+          createdAt: new Date(),
+        },
+      ],
+      { session }, // Pass session to create
+    );
+
+    // 8. Additional related operations (all with session)
+    // Example: Update related collection
+    // await RelatedModel.updateOne(
+    //   { _id: relatedId },
+    //   { $set: { updatedBy: user._id, updatedAt: new Date() } },
+    //   { session }
+    // );
+
+    // 9. Commit transaction
+    await session.commitTransaction();
+
+    // 10. Return success response
+    return NextResponse.json(
+      {
+        message: "Record created successfully",
+        data: newRecord[0],
+      },
+      { status: 201 },
+    );
+  } catch (err: unknown) {
+    // 11. Rollback on error
+    await session.abortTransaction();
+
+    console.error("Transaction error:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to create record",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
+      { status: 500 },
+    );
+  } finally {
+    // 12. Always end session
+    await session.endSession();
+  }
+}
+```
+
+### Update Pattern (PUT/PATCH)
+
+```typescript
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { user, error } = await withAuth(request, PAGE_PATH);
+  if (error) return error;
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const { id } = await params; // Next.js 16 - params is Promise
+    const body = await request.json();
+    const { field1, field2, field3 } = body;
+
+    // Validation
+    if (!field1 || !field2) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Required fields missing" },
+        { status: 400 },
+      );
+    }
+
+    await connectDB();
+
+    // Find existing record
+    const existingRecord = await YourModel.findOne({
+      _id: id,
+      status: { $ne: "DELETED" },
+    }).session(session);
+
+    if (!existingRecord) {
+      await session.abortTransaction();
+      return NextResponse.json({ error: "Record not found" }, { status: 404 });
+    }
+
+    // Check for duplicates (excluding current record)
+    const duplicate = await YourModel.findOne({
+      field1,
+      _id: { $ne: id },
+      status: { $ne: "DELETED" },
+    }).session(session);
+
+    if (duplicate) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Duplicate record exists" },
+        { status: 409 },
+      );
+    }
+
+    // Update with audit fields
+    const updatedRecord = await YourModel.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          field1,
+          field2,
+          field3,
+          updatedBy: user._id,
+          updatedAt: new Date(),
+        },
+      },
+      {
+        new: true, // Return updated document
+        session, // Use transaction session
+        runValidators: true, // Run model validators
+      },
+    ).populate("relatedField"); // Populate if needed
+
+    await session.commitTransaction();
+
+    return NextResponse.json({
+      message: "Record updated successfully",
+      data: updatedRecord,
+    });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Update transaction error:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to update record",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
+      { status: 500 },
+    );
+  } finally {
+    await session.endSession();
+  }
+}
+```
+
+### Soft Delete Pattern (DELETE)
+
+```typescript
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { user, error } = await withAuth(request, PAGE_PATH);
+  if (error) return error;
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const { id } = await params;
+    const body = await request.json();
+    const { reason } = body; // Deletion reason
+
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
+
+    await connectDB();
+
+    // Find record to delete
+    const existingRecord = await YourModel.findOne({
+      _id: id,
+      status: { $ne: "DELETED" },
+    }).session(session);
+
+    if (!existingRecord) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Record not found or already deleted" },
+        { status: 404 },
+      );
+    }
+
+    // Soft delete with audit trail
+    const deletedRecord = await YourModel.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          status: "DELETED",
+          deletedBy: user._id,
+          deletedAt: new Date(),
+          deletedReason: reason,
+        },
+      },
+      { new: true, session },
+    );
+
+    // Handle cascading soft deletes if needed
+    // await RelatedModel.updateMany(
+    //   { parentId: id },
+    //   {
+    //     $set: {
+    //       status: "DELETED",
+    //       deletedBy: user._id,
+    //       deletedAt: new Date(),
+    //       deletedReason: `Parent deleted: ${reason}`,
+    //     },
+    //   },
+    //   { session }
+    // );
+
+    await session.commitTransaction();
+
+    return NextResponse.json({
+      message: "Record deleted successfully",
+      data: deletedRecord,
+    });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Delete transaction error:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to delete record",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
+      { status: 500 },
+    );
+  } finally {
+    await session.endSession();
+  }
+}
+```
+
+### Transaction Best Practices
+
+#### 1. Session Management
+
+```typescript
+// ✅ CORRECT - Always use try-catch-finally
+const session = await mongoose.startSession();
+try {
+  await session.startTransaction();
+  // ... operations
+  await session.commitTransaction();
+} catch (error) {
+  await session.abortTransaction();
+  throw error;
+} finally {
+  await session.endSession(); // CRITICAL: Always end session
+}
+
+// ❌ WRONG - Session not properly closed
+const session = await mongoose.startSession();
+await session.startTransaction();
+// ... operations (if error occurs, session leaks)
+await session.commitTransaction();
+```
+
+#### 2. Passing Session to Operations
+
+```typescript
+// ✅ CORRECT - Pass session to all operations
+const record = await Model.findOne({ _id: id }).session(session);
+const created = await Model.create([data], { session });
+const updated = await Model.findByIdAndUpdate(id, data, { session });
+
+// ❌ WRONG - Operations without session (not transactional)
+const record = await Model.findOne({ _id: id }); // Not in transaction!
+const created = await Model.create(data); // Not in transaction!
+```
+
+#### 3. Validation Before Transaction
+
+```typescript
+// ✅ CORRECT - Validate early, abort transaction on validation failure
+const body = await request.json();
+if (!body.requiredField) {
+  await session.abortTransaction();
+  return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+}
+
+// ❌ WRONG - Throwing errors without aborting
+if (!body.requiredField) {
+  throw new Error("Validation failed"); // Transaction left hanging
+}
+```
+
+#### 4. Error Handling
+
+```typescript
+// ✅ CORRECT - Proper error handling with typed errors
+try {
+  // ... transaction operations
+} catch (err: unknown) {
+  await session.abortTransaction();
+  console.error("Transaction error:", err);
+  return NextResponse.json(
+    {
+      error: "Operation failed",
+      details: err instanceof Error ? err.message : "Unknown error",
+    },
+    { status: 500 },
+  );
+} finally {
+  await session.endSession();
+}
+
+// ❌ WRONG - Untyped error, no abort
+try {
+  // ... operations
+} catch (err) {
+  console.log(err.message); // Type error
+  return NextResponse.json({ error: err.message });
+}
+```
+
+#### 5. MongoDB Connection
+
+```typescript
+// ✅ CORRECT - Connect before starting transaction operations
+await connectDB();
+const session = await mongoose.startSession();
+await session.startTransaction();
+// ... operations
+
+// ❌ WRONG - Starting session before ensuring connection
+const session = await mongoose.startSession(); // May fail if not connected
+await connectDB();
+```
+
+### Transaction Limitations & Considerations
+
+#### Replica Set Requirement
+
+- **MongoDB transactions require a replica set**
+- Development: Use `mongodb://localhost:27017/?replicaSet=rs0`
+- Production: Atlas clusters are replica sets by default
+- Local setup: Initialize replica set with `rs.initiate()`
+
+#### Performance Considerations
+
+- Transactions have performance overhead - use only for write operations
+- Keep transactions short - minimize time between start and commit
+- Avoid long-running operations inside transactions
+- Don't perform external API calls inside transactions
+
+#### Read Operations
+
+```typescript
+// ✅ Read operations DON'T need transactions for single document
+export async function GET(request: NextRequest) {
+  const { user, error } = await withAuth(request, PAGE_PATH);
+  if (error) return error;
+
+  try {
+    await connectDB();
+
+    // Simple read - no transaction needed
+    const records = await YourModel.find({ status: { $ne: "DELETED" } })
+      .populate("relatedField")
+      .sort({ createdAt: -1 });
+
+    return NextResponse.json({ data: records });
+  } catch (err: unknown) {
+    console.error("Query error:", err);
+    return NextResponse.json(
+      { error: "Failed to fetch records" },
+      { status: 500 },
+    );
+  }
+}
+```
+
+### Multi-Document Transaction Example
+
+**Use case: Creating a loan with related payment schedule**
+
+```typescript
+export async function POST(request: NextRequest) {
+  const { user, error } = await withAuth(request, PAGE_PATH);
+  if (error) return error;
+
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    const { clientId, amount, interestRate, term } = await request.json();
+
+    await connectDB();
+
+    // Create loan
+    const loan = await Loan.create(
+      [
+        {
+          clientId,
+          amount,
+          interestRate,
+          term,
+          status: "ACTIVE",
+          createdBy: user._id,
+        },
+      ],
+      { session },
+    );
+
+    // Create payment schedule
+    const payments = [];
+    for (let i = 0; i < term; i++) {
+      payments.push({
+        loanId: loan[0]._id,
+        dueDate: new Date(Date.now() + (i + 1) * 30 * 24 * 60 * 60 * 1000),
+        amount: amount / term,
+        status: "PENDING",
+        createdBy: user._id,
+      });
+    }
+
+    await Payment.create(payments, { session });
+
+    // Update client's loan count
+    await Client.findByIdAndUpdate(
+      clientId,
+      {
+        $inc: { activeLoans: 1 },
+        $set: { updatedBy: user._id, updatedAt: new Date() },
+      },
+      { session },
+    );
+
+    await session.commitTransaction();
+
+    return NextResponse.json(
+      {
+        message: "Loan created successfully",
+        data: { loan: loan[0], paymentsCreated: payments.length },
+      },
+      { status: 201 },
+    );
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Loan creation transaction error:", err);
+    return NextResponse.json(
+      { error: "Failed to create loan" },
+      { status: 500 },
+    );
+  } finally {
+    await session.endSession();
+  }
+}
+```
+
+### Checklist for Every Write Operation
+
+Before committing code, verify:
+
+- [ ] Session started with `mongoose.startSession()`
+- [ ] Transaction started with `session.startTransaction()`
+- [ ] All database operations include `.session(session)`
+- [ ] Transaction committed with `session.commitTransaction()`
+- [ ] Errors handled with `session.abortTransaction()`
+- [ ] Session ended with `session.endSession()` in `finally` block
+- [ ] Audit fields included (`createdBy`, `updatedBy`, `deletedBy`)
+- [ ] Timestamps included (`createdAt`, `updatedAt`, `deletedAt`)
+- [ ] Validation performed before operations
+- [ ] Error responses return appropriate status codes
+- [ ] No external API calls inside transaction
+- [ ] Transaction kept as short as possible
+
+---
+
 ## Recent Updates (Last Modified: 2026-04-12)
 
 ### ✅ Completed Features

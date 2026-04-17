@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Permission, { PermissionStatus } from "@/models/Permission";
 import { withAuth } from "@/lib/apiAuth";
@@ -49,31 +50,60 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const body = await request.json();
 
-    const newRecord = await Permission.create({
-      permission: body.permission,
-    });
+    if (!body.permission || body.permission.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Permission name is required" },
+        { status: 400 },
+      );
+    }
 
-    return NextResponse.json(newRecord, { status: 201 });
-  } catch (error: unknown) {
-    console.error("Error creating record:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
+    await dbConnect();
+
+    // Check for duplicate
+    const existingPermission = await Permission.findOne({
+      permission: body.permission,
+    }).session(session);
+
+    if (existingPermission) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Permission already exists" },
         { status: 409 },
       );
     }
+
+    const newRecord = await Permission.create(
+      [
+        {
+          permission: body.permission,
+          status: PermissionStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+
+    return NextResponse.json(newRecord[0], { status: 201 });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Permission creation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to create record" },
+      {
+        error: "Failed to create record",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

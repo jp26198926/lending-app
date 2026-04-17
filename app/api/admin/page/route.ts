@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Page, { PageStatus } from "@/models/Page";
 import { withAuth } from "@/lib/apiAuth";
@@ -8,14 +9,13 @@ const PAGE_PATH = "/admin/page";
 // GET - Fetch all records (excluding soft deleted)
 export async function GET(request: NextRequest) {
   // Check authentication and permission
-  const { user, error } = await withAuth(request, PAGE_PATH);
+  const { error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
   try {
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
     const page = searchParams.get("page");
     const path = searchParams.get("path");
 
@@ -51,37 +51,66 @@ export async function GET(request: NextRequest) {
 // POST - Create new record
 export async function POST(request: NextRequest) {
   // Check authentication and permission
-  const { user, error } = await withAuth(request, PAGE_PATH);
+  const { error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const body = await request.json();
 
-    const newRecord = await Page.create({
-      page: body.page,
-      path: body.path,
-      parentId: body.parentId || null,
-      order: body.order || 0,
-    });
+    if (!body.page || !body.path) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Page name and path are required" },
+        { status: 400 },
+      );
+    }
 
-    return NextResponse.json(newRecord, { status: 201 });
-  } catch (error: unknown) {
-    console.error("Error creating record:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
+    await dbConnect();
+
+    // Check for duplicate path
+    const existingPage = await Page.findOne({
+      path: body.path,
+    }).session(session);
+
+    if (existingPage) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Path already exists" },
         { status: 409 },
       );
     }
+
+    const newRecord = await Page.create(
+      [
+        {
+          page: body.page,
+          path: body.path,
+          parentId: body.parentId || null,
+          order: body.order || 0,
+          status: PageStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+
+    return NextResponse.json(newRecord[0], { status: 201 });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Page creation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to create record" },
+      {
+        error: "Failed to create record",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

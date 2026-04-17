@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Cycle, { CycleStatus } from "@/models/Cycle";
 import { withAuth } from "@/lib/apiAuth";
@@ -56,8 +57,11 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
@@ -74,19 +78,22 @@ export async function PUT(
       profitEarned,
       profitRemaining,
       dateDue,
-      updatedBy,
       status,
     } = body;
 
+    await connectDB();
+
     // Find the cycle
-    const cycle = await Cycle.findById(id);
+    const cycle = await Cycle.findById(id).session(session);
 
     if (!cycle) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Cycle not found" }, { status: 404 });
     }
 
     // Prevent editing cancelled cycles
     if (cycle.status === CycleStatus.CANCELLED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Cannot edit a cancelled cycle" },
         { status: 403 },
@@ -95,6 +102,7 @@ export async function PUT(
 
     // Validate numeric values if provided
     if (principal !== undefined && principal < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Principal must be a positive number" },
         { status: 400 },
@@ -102,6 +110,7 @@ export async function PUT(
     }
 
     if (interestRate !== undefined && interestRate < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Interest rate must be a positive number" },
         { status: 400 },
@@ -109,6 +118,7 @@ export async function PUT(
     }
 
     if (cycleCount !== undefined && cycleCount < 1) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Cycle count must be at least 1" },
         { status: 400 },
@@ -129,9 +139,10 @@ export async function PUT(
     if (profitRemaining !== undefined) cycle.profitRemaining = profitRemaining;
     if (dateDue) cycle.dateDue = dateDue;
     if (status) cycle.status = status;
-    if (updatedBy) cycle.updatedBy = updatedBy;
+    cycle.updatedBy = user._id;
+    cycle.updatedAt = new Date();
 
-    await cycle.save();
+    await cycle.save({ session });
 
     // Populate and return
     const updatedCycle = await Cycle.findById(id)
@@ -144,14 +155,18 @@ export async function PUT(
         },
       })
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(updatedCycle, { status: 200 });
-  } catch (error) {
-    console.error("Error updating cycle:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Cycle update transaction error:", err);
 
     // Handle duplicate key error
-    if ((error as { code?: number }).code === 11000) {
+    if ((err as { code?: number }).code === 11000) {
       return NextResponse.json(
         { error: "A cycle with this loan and cycle count already exists" },
         { status: 409 },
@@ -159,9 +174,14 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { error: "Failed to update cycle" },
+      {
+        error: "Failed to update cycle",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -174,21 +194,35 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
-  try {
-    await connectDB();
-    const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+  const session = await mongoose.startSession();
 
-    const cycle = await Cycle.findById(id);
+  try {
+    await session.startTransaction();
+
+    const { id } = await params;
+    const body = await request.json();
+    const { reason } = body;
+
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
+
+    await connectDB();
+
+    const cycle = await Cycle.findById(id).session(session);
 
     if (!cycle) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Cycle not found" }, { status: 404 });
     }
 
     // Prevent deleting already cancelled cycles
     if (cycle.status === CycleStatus.CANCELLED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Cycle is already cancelled" },
         { status: 403 },
@@ -197,6 +231,7 @@ export async function DELETE(
 
     // Only active cycles can be cancelled
     if (cycle.status !== CycleStatus.ACTIVE) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Only active cycles can be cancelled" },
         { status: 403 },
@@ -206,10 +241,10 @@ export async function DELETE(
     // Soft delete
     cycle.status = CycleStatus.CANCELLED;
     cycle.deletedAt = new Date();
-    if (deletedBy) cycle.deletedBy = deletedBy;
-    if (deletedReason) cycle.deletedReason = deletedReason;
+    cycle.deletedBy = user._id;
+    cycle.deletedReason = reason;
 
-    await cycle.save();
+    await cycle.save({ session });
 
     // Populate and return
     const deletedCycle = await Cycle.findById(id)
@@ -223,15 +258,24 @@ export async function DELETE(
       })
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
-      .populate("deletedBy", "firstName lastName email");
+      .populate("deletedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(deletedCycle, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting cycle:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Cycle deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete cycle" },
+      {
+        error: "Failed to delete cycle",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -244,13 +288,19 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const cycle = await Cycle.findById(id);
+    await connectDB();
+
+    const cycle = await Cycle.findById(id).session(session);
 
     if (!cycle) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Cycle not found" }, { status: 404 });
     }
 
@@ -259,8 +309,10 @@ export async function PATCH(
     cycle.deletedAt = undefined;
     cycle.deletedBy = undefined;
     cycle.deletedReason = undefined;
+    cycle.updatedBy = user._id;
+    cycle.updatedAt = new Date();
 
-    await cycle.save();
+    await cycle.save({ session });
 
     // Populate and return
     const activatedCycle = await Cycle.findById(id)
@@ -273,14 +325,23 @@ export async function PATCH(
         },
       })
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(activatedCycle, { status: 200 });
-  } catch (error) {
-    console.error("Error activating cycle:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Cycle activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate cycle" },
+      {
+        error: "Failed to activate cycle",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

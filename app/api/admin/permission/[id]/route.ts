@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Permission, { PermissionStatus } from "@/models/Permission";
 import { withAuth } from "@/lib/apiAuth";
@@ -49,44 +50,69 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const updatedRecord = await Permission.findOneAndUpdate(
-      { _id: id /* status: PermissionStatus.ACTIVE */ },
-      {
-        permission: body.permission,
-      },
-      { returnDocument: "after", runValidators: true },
-    );
+    if (!body.permission || body.permission.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Permission name is required" },
+        { status: 400 },
+      );
+    }
 
-    if (!updatedRecord) {
+    await dbConnect();
+
+    // Find existing permission
+    const existingPermission = await Permission.findById(id).session(session);
+
+    if (!existingPermission) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Permission not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json(updatedRecord);
-  } catch (error: unknown) {
-    console.error("Error updating permission:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
+    // Check for duplicate (excluding current permission)
+    const duplicatePermission = await Permission.findOne({
+      permission: body.permission,
+      _id: { $ne: id },
+    }).session(session);
+
+    if (duplicatePermission) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Permission already exists" },
         { status: 409 },
       );
     }
+
+    existingPermission.permission = body.permission;
+    existingPermission.updatedAt = new Date();
+
+    await existingPermission.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingPermission);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Permission update transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to update permission" },
+      {
+        error: "Failed to update permission",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -99,33 +125,57 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
+    const body = await request.json();
+    const { reason } = body;
 
-    const deletedRecord = await Permission.findByIdAndUpdate(
-      id,
-      {
-        status: PermissionStatus.DELETED,
-        deletedAt: new Date(),
-      },
-      { new: true },
-    );
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
 
-    if (!deletedRecord) {
+    await dbConnect();
+
+    const existingPermission = await Permission.findById(id).session(session);
+
+    if (!existingPermission) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Permission not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json(deletedRecord);
-  } catch (error) {
-    console.error("Error deleting permission:", error);
+    existingPermission.status = PermissionStatus.DELETED;
+    existingPermission.deletedAt = new Date();
+    existingPermission.deletedBy = user._id;
+    existingPermission.deletedReason = reason;
+
+    await existingPermission.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingPermission);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Permission deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete permission" },
+      {
+        error: "Failed to delete permission",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -138,34 +188,47 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const activatedRecord = await Permission.findByIdAndUpdate(
-      id,
-      {
-        status: PermissionStatus.ACTIVE,
-        deletedAt: null,
-        deletedBy: null,
-        deletedReason: null,
-      },
-      { new: true },
-    );
+    await dbConnect();
 
-    if (!activatedRecord) {
+    const existingPermission = await Permission.findById(id).session(session);
+
+    if (!existingPermission) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Permission not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json(activatedRecord);
-  } catch (error) {
-    console.error("Error activating permission:", error);
+    existingPermission.status = PermissionStatus.ACTIVE;
+    existingPermission.deletedAt = null;
+    existingPermission.deletedBy = null;
+    existingPermission.deletedReason = null;
+    existingPermission.updatedAt = new Date();
+
+    await existingPermission.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingPermission);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Permission activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate permission" },
+      {
+        error: "Failed to activate permission",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

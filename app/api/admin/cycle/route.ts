@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Cycle, { CycleStatus } from "@/models/Cycle";
 import { withAuth } from "@/lib/apiAuth";
@@ -61,8 +62,10 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
 
     const body = await request.json();
     const {
@@ -78,7 +81,6 @@ export async function POST(request: NextRequest) {
       profitEarned,
       profitRemaining,
       dateDue,
-      createdBy,
       status,
     } = body;
 
@@ -95,6 +97,7 @@ export async function POST(request: NextRequest) {
       profitRemaining === undefined ||
       !dateDue
     ) {
+      await session.abortTransaction();
       return NextResponse.json(
         {
           error:
@@ -106,6 +109,7 @@ export async function POST(request: NextRequest) {
 
     // Validate numeric values
     if (principal < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Principal must be a positive number" },
         { status: 400 },
@@ -113,6 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (interestRate < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Interest rate must be a positive number" },
         { status: 400 },
@@ -120,32 +125,40 @@ export async function POST(request: NextRequest) {
     }
 
     if (cycleCount < 1) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Cycle count must be at least 1" },
         { status: 400 },
       );
     }
 
+    await connectDB();
+
     // Create cycle
-    const cycle = await Cycle.create({
-      loanId,
-      cycleCount,
-      principal,
-      interestRate,
-      interestAmount,
-      totalDue,
-      totalPaid: totalPaid || 0,
-      balance,
-      profitExpected,
-      profitEarned: profitEarned || 0,
-      profitRemaining,
-      dateDue,
-      createdBy: createdBy || user?._id,
-      status: status || CycleStatus.ACTIVE,
-    });
+    const cycle = await Cycle.create(
+      [
+        {
+          loanId,
+          cycleCount,
+          principal,
+          interestRate,
+          interestAmount,
+          totalDue,
+          totalPaid: totalPaid || 0,
+          balance,
+          profitExpected,
+          profitEarned: profitEarned || 0,
+          profitRemaining,
+          dateDue,
+          createdBy: user._id,
+          status: status || CycleStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
 
     // Populate references for response
-    await cycle.populate({
+    await cycle[0].populate({
       path: "loanId",
       select: "loanNo clientId principal interestRate terms status",
       populate: {
@@ -153,14 +166,17 @@ export async function POST(request: NextRequest) {
         select: "firstName middleName lastName email",
       },
     });
-    await cycle.populate("createdBy", "firstName lastName email");
+    await cycle[0].populate("createdBy", "firstName lastName email");
 
-    return NextResponse.json(cycle, { status: 201 });
-  } catch (error) {
-    console.error("Error creating cycle:", error);
+    await session.commitTransaction();
+
+    return NextResponse.json(cycle[0], { status: 201 });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Cycle creation transaction error:", err);
 
     // Handle duplicate key error
-    if ((error as { code?: number }).code === 11000) {
+    if ((err as { code?: number }).code === 11000) {
       return NextResponse.json(
         { error: "A cycle with this loan and cycle count already exists" },
         { status: 409 },
@@ -168,8 +184,13 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Failed to create cycle" },
+      {
+        error: "Failed to create cycle",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

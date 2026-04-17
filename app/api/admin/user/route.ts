@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import User, { UserStatus } from "@/models/User";
 import { withAuth } from "@/lib/apiAuth";
@@ -78,8 +79,10 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
 
     const body = await request.json();
     const {
@@ -93,12 +96,12 @@ export async function POST(request: NextRequest) {
       cashReceivable,
       capitalContribution,
       profitEarned,
-      createdBy,
       status,
     } = body;
 
     // Validate required fields
     if (!email || !password || !firstName || !lastName || !phone || !roleId) {
+      await session.abortTransaction();
       return NextResponse.json(
         {
           error:
@@ -108,47 +111,64 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await connectDB();
+
     // Check if user with the same email already exists (excluding DELETED)
     const existingUser = await User.findOne({
       email: email.toLowerCase().trim(),
       // status: { $ne: UserStatus.DELETED },
-    });
+    }).session(session);
 
     if (existingUser) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "User with this email already exists" },
         { status: 409 },
       );
     }
 
-    // Create new user
-    const newUser = await User.create({
-      email: email.toLowerCase().trim(),
-      password,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      phone: phone.trim(),
-      roleId,
-      rate: rate || 0,
-      cashReceivable: cashReceivable || 0,
-      capitalContribution: capitalContribution || 0,
-      profitEarned: profitEarned || 0,
-      createdBy: createdBy || null,
-      status: status || UserStatus.ACTIVE,
-    });
+    // Create new user with transaction
+    const newUser = await User.create(
+      [
+        {
+          email: email.toLowerCase().trim(),
+          password,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phone: phone.trim(),
+          roleId,
+          rate: rate || 0,
+          cashReceivable: cashReceivable || 0,
+          capitalContribution: capitalContribution || 0,
+          profitEarned: profitEarned || 0,
+          createdBy: user._id,
+          status: status || UserStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
 
     // Populate and return without password
-    const populatedUser = await User.findById(newUser._id)
+    const populatedUser = await User.findById(newUser[0]._id)
       .populate("roleId", "role status")
       .populate("createdBy", "firstName lastName email")
-      .select("-password");
+      .select("-password")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(populatedUser, { status: 201 });
-  } catch (error) {
-    console.error("Error creating user:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("User creation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to create user" },
+      {
+        error: "Failed to create user",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

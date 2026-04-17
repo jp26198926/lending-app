@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/User";
 import { checkAuth } from "@/lib/apiAuth";
@@ -18,15 +19,19 @@ export async function POST(
     );
   }
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const { oldPassword, newPassword, updatedBy } = body;
+    const { oldPassword, newPassword } = body;
 
     // Validate input - newPassword is required, oldPassword is optional (for admin override)
     if (!newPassword) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "New password is required" },
         { status: 400 },
@@ -34,16 +39,20 @@ export async function POST(
     }
 
     if (newPassword.length < 6) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "New password must be at least 6 characters long" },
         { status: 400 },
       );
     }
 
+    await connectDB();
+
     // Find the user
-    const user = await User.findById(id);
+    const user = await User.findById(id).session(session);
 
     if (!user) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
@@ -52,6 +61,7 @@ export async function POST(
       const isPasswordValid = await user.comparePassword(oldPassword);
 
       if (!isPasswordValid) {
+        await session.abortTransaction();
         return NextResponse.json(
           { error: "Current password is incorrect" },
           { status: 401 },
@@ -61,19 +71,28 @@ export async function POST(
 
     // Update password
     user.password = newPassword;
-    if (updatedBy) user.updatedBy = updatedBy;
+    user.updatedBy = authResult.user._id;
+    user.updatedAt = new Date();
 
-    await user.save();
+    await user.save({ session });
+
+    await session.commitTransaction();
 
     return NextResponse.json(
       { message: "Password changed successfully" },
       { status: 200 },
     );
-  } catch (error) {
-    console.error("Error changing password:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Password change transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to change password" },
+      {
+        error: "Failed to change password",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

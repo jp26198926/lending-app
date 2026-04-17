@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Payment, { PaymentStatus } from "@/models/Payment";
 import { withAuth } from "@/lib/apiAuth";
@@ -61,23 +62,29 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const { loanId, cycleId, amount, datePaid, remarks, updatedBy, status } =
-      body;
+    const { loanId, cycleId, amount, datePaid, remarks, status } = body;
+
+    await connectDB();
 
     // Find the payment
-    const payment = await Payment.findById(id);
+    const payment = await Payment.findById(id).session(session);
 
     if (!payment) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     }
 
     // Prevent editing cancelled payments
     if (payment.status === PaymentStatus.CANCELLED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Cannot edit a cancelled payment" },
         { status: 403 },
@@ -86,6 +93,7 @@ export async function PUT(
 
     // Validate numeric values if provided
     if (amount !== undefined && amount < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Amount must be a positive number" },
         { status: 400 },
@@ -99,9 +107,10 @@ export async function PUT(
     if (datePaid) payment.datePaid = datePaid;
     if (remarks !== undefined) payment.remarks = remarks;
     if (status) payment.status = status;
-    payment.updatedBy = updatedBy || user?._id;
+    payment.updatedBy = user._id;
+    payment.updatedAt = new Date();
 
-    await payment.save();
+    await payment.save({ session });
 
     // Populate and return
     const updatedPayment = await Payment.findById(id)
@@ -118,14 +127,18 @@ export async function PUT(
         select: "cycleCount totalDue totalPaid balance dateDue status",
       })
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(updatedPayment, { status: 200 });
-  } catch (error) {
-    console.error("Error updating payment:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Payment update transaction error:", err);
 
     // Handle duplicate key error
-    if ((error as { code?: number }).code === 11000) {
+    if ((err as { code?: number }).code === 11000) {
       return NextResponse.json(
         { error: "A payment with this payment number already exists" },
         { status: 409 },
@@ -133,9 +146,14 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { error: "Failed to update payment" },
+      {
+        error: "Failed to update payment",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -148,21 +166,35 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
-  try {
-    await connectDB();
-    const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+  const session = await mongoose.startSession();
 
-    const payment = await Payment.findById(id);
+  try {
+    await session.startTransaction();
+
+    const { id } = await params;
+    const body = await request.json();
+    const { reason } = body;
+
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
+
+    await connectDB();
+
+    const payment = await Payment.findById(id).session(session);
 
     if (!payment) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     }
 
     // Prevent deleting already cancelled payments
     if (payment.status === PaymentStatus.CANCELLED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Payment is already cancelled" },
         { status: 403 },
@@ -171,6 +203,7 @@ export async function DELETE(
 
     // Only completed payments can be cancelled
     if (payment.status !== PaymentStatus.COMPLETED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Only completed payments can be cancelled" },
         { status: 403 },
@@ -180,10 +213,10 @@ export async function DELETE(
     // Soft delete (cancel)
     payment.status = PaymentStatus.CANCELLED;
     payment.deletedAt = new Date();
-    payment.deletedBy = deletedBy || user?._id;
-    if (deletedReason) payment.deletedReason = deletedReason;
+    payment.deletedBy = user._id;
+    payment.deletedReason = reason;
 
-    await payment.save();
+    await payment.save({ session });
 
     // Populate and return
     const deletedPayment = await Payment.findById(id)
@@ -201,14 +234,23 @@ export async function DELETE(
       })
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
-      .populate("deletedBy", "firstName lastName email");
+      .populate("deletedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(deletedPayment, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting payment:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Payment deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete payment" },
+      {
+        error: "Failed to delete payment",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

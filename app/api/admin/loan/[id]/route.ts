@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Loan, { LoanStatus } from "@/models/Loan";
 import { withAuth } from "@/lib/apiAuth";
@@ -53,8 +54,11 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
@@ -65,19 +69,22 @@ export async function PUT(
       terms,
       dateStarted,
       assignedStaff,
-      updatedBy,
       status,
     } = body;
 
+    await connectDB();
+
     // Find the loan
-    const loan = await Loan.findById(id);
+    const loan = await Loan.findById(id).session(session);
 
     if (!loan) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     }
 
     // Prevent editing cancelled loans
     if (loan.status === LoanStatus.CANCELLED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Cannot edit a cancelled loan" },
         { status: 403 },
@@ -86,6 +93,7 @@ export async function PUT(
 
     // Validate numeric values if provided
     if (principal !== undefined && principal < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Principal must be a positive number" },
         { status: 400 },
@@ -93,6 +101,7 @@ export async function PUT(
     }
 
     if (interestRate !== undefined && interestRate < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Interest rate must be a positive number" },
         { status: 400 },
@@ -107,23 +116,28 @@ export async function PUT(
     if (dateStarted) loan.dateStarted = dateStarted;
     if (assignedStaff) loan.assignedStaff = assignedStaff;
     if (status) loan.status = status;
-    if (updatedBy) loan.updatedBy = updatedBy;
+    loan.updatedBy = user._id;
+    loan.updatedAt = new Date();
 
-    await loan.save();
+    await loan.save({ session });
 
     // Populate and return
     const updatedLoan = await Loan.findById(id)
       .populate("clientId", "firstName middleName lastName email phone address")
       .populate("assignedStaff", "firstName lastName email")
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(updatedLoan, { status: 200 });
-  } catch (error) {
-    console.error("Error updating loan:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Loan update transaction error:", err);
 
     // Handle duplicate key error
-    if ((error as { code?: number }).code === 11000) {
+    if ((err as { code?: number }).code === 11000) {
       return NextResponse.json(
         { error: "A loan with this loan number already exists" },
         { status: 409 },
@@ -131,9 +145,14 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      { error: "Failed to update loan" },
+      {
+        error: "Failed to update loan",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -146,21 +165,35 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
-  try {
-    await connectDB();
-    const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+  const session = await mongoose.startSession();
 
-    const loan = await Loan.findById(id);
+  try {
+    await session.startTransaction();
+
+    const { id } = await params;
+    const body = await request.json();
+    const { reason } = body;
+
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
+
+    await connectDB();
+
+    const loan = await Loan.findById(id).session(session);
 
     if (!loan) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     }
 
     // Prevent deleting already cancelled loans
     if (loan.status === LoanStatus.CANCELLED) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Loan is already cancelled" },
         { status: 403 },
@@ -169,6 +202,7 @@ export async function DELETE(
 
     // Only active loans can be cancelled
     if (loan.status !== LoanStatus.ACTIVE) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Only active loans can be cancelled" },
         { status: 403 },
@@ -178,10 +212,10 @@ export async function DELETE(
     // Soft delete
     loan.status = LoanStatus.CANCELLED;
     loan.deletedAt = new Date();
-    if (deletedBy) loan.deletedBy = deletedBy;
-    if (deletedReason) loan.deletedReason = deletedReason;
+    loan.deletedBy = user._id;
+    loan.deletedReason = reason;
 
-    await loan.save();
+    await loan.save({ session });
 
     // Populate and return
     const deletedLoan = await Loan.findById(id)
@@ -189,15 +223,24 @@ export async function DELETE(
       .populate("assignedStaff", "firstName lastName email")
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
-      .populate("deletedBy", "firstName lastName email");
+      .populate("deletedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(deletedLoan, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting loan:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Loan deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete loan" },
+      {
+        error: "Failed to delete loan",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -210,13 +253,19 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const loan = await Loan.findById(id);
+    await connectDB();
+
+    const loan = await Loan.findById(id).session(session);
 
     if (!loan) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Loan not found" }, { status: 404 });
     }
 
@@ -225,22 +274,33 @@ export async function PATCH(
     loan.deletedAt = undefined;
     loan.deletedBy = undefined;
     loan.deletedReason = undefined;
+    loan.updatedBy = user._id;
+    loan.updatedAt = new Date();
 
-    await loan.save();
+    await loan.save({ session });
 
     // Populate and return
     const activatedLoan = await Loan.findById(id)
       .populate("clientId", "firstName middleName lastName email phone address")
       .populate("assignedStaff", "firstName lastName email")
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(activatedLoan, { status: 200 });
-  } catch (error) {
-    console.error("Error activating loan:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Loan activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate loan" },
+      {
+        error: "Failed to activate loan",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Client, { ClientStatus } from "@/models/Client";
 import { withAuth } from "@/lib/apiAuth";
@@ -75,22 +76,17 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
 
     const body = await request.json();
-    const {
-      firstName,
-      middleName,
-      lastName,
-      phone,
-      email,
-      address,
-      createdBy,
-    } = body;
+    const { firstName, middleName, lastName, phone, email, address } = body;
 
     // Validate required fields
     if (!firstName || !lastName || !phone || !email || !address) {
+      await session.abortTransaction();
       return NextResponse.json(
         {
           error:
@@ -100,13 +96,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await connectDB();
+
     // Check if client with the same email already exists (excluding DELETED)
     const existingClient = await Client.findOne({
       email: email.toLowerCase().trim(),
       // status: { $ne: ClientStatus.DELETED },
-    });
+    }).session(session);
 
     if (existingClient) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Client with this email already exists" },
         { status: 409 },
@@ -114,28 +113,41 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new client
-    const newClient = await Client.create({
-      firstName: firstName.trim(),
-      middleName: middleName ? middleName.trim() : undefined,
-      lastName: lastName.trim(),
-      phone: phone.trim(),
-      email: email.toLowerCase().trim(),
-      address: address.trim(),
-      createdBy: createdBy || null,
-    });
+    const newClient = await Client.create(
+      [
+        {
+          firstName: firstName.trim(),
+          middleName: middleName ? middleName.trim() : undefined,
+          lastName: lastName.trim(),
+          phone: phone.trim(),
+          email: email.toLowerCase().trim(),
+          address: address.trim(),
+          createdBy: user._id,
+          status: ClientStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
 
     // Populate and return
-    const populatedClient = await Client.findById(newClient._id).populate(
-      "createdBy",
-      "firstName lastName email",
-    );
+    const populatedClient = await Client.findById(newClient[0]._id)
+      .populate("createdBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(populatedClient, { status: 201 });
-  } catch (error) {
-    console.error("Error creating client:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Client creation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to create client" },
+      {
+        error: "Failed to create client",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

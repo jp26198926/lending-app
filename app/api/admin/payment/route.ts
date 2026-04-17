@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Payment, { PaymentStatus } from "@/models/Payment";
 import { withAuth } from "@/lib/apiAuth";
@@ -71,15 +72,17 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
 
     const body = await request.json();
-    const { loanId, cycleId, amount, datePaid, remarks, createdBy, status } =
-      body;
+    const { loanId, cycleId, amount, datePaid, remarks, status } = body;
 
     // Validate required fields
     if (!loanId || !cycleId || amount === undefined || !datePaid) {
+      await session.abortTransaction();
       return NextResponse.json(
         {
           error: "Loan, cycle, amount, and date paid are required",
@@ -90,16 +93,20 @@ export async function POST(request: NextRequest) {
 
     // Validate numeric values
     if (amount < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Amount must be a positive number" },
         { status: 400 },
       );
     }
 
-    // Auto-generate payment number
+    await connectDB();
+
+    // Auto-generate payment number within transaction
     const latestPayment = await Payment.findOne()
       .sort({ createdAt: -1 })
-      .select("paymentNo");
+      .select("paymentNo")
+      .session(session);
 
     let nextNumber = 1;
     if (latestPayment && latestPayment.paymentNo) {
@@ -112,19 +119,24 @@ export async function POST(request: NextRequest) {
     const paymentNo = `PAY-${String(nextNumber).padStart(5, "0")}`;
 
     // Create payment
-    const payment = await Payment.create({
-      paymentNo,
-      loanId,
-      cycleId,
-      amount,
-      datePaid,
-      remarks,
-      createdBy: createdBy || user?._id,
-      status: status || PaymentStatus.COMPLETED,
-    });
+    const payment = await Payment.create(
+      [
+        {
+          paymentNo,
+          loanId,
+          cycleId,
+          amount,
+          datePaid,
+          remarks,
+          createdBy: user._id,
+          status: status || PaymentStatus.COMPLETED,
+        },
+      ],
+      { session },
+    );
 
     // Populate references for response
-    await payment.populate({
+    await payment[0].populate({
       path: "loanId",
       select: "loanNo clientId principal interestRate terms status",
       populate: {
@@ -132,18 +144,26 @@ export async function POST(request: NextRequest) {
         select: "firstName middleName lastName email",
       },
     });
-    await payment.populate({
+    await payment[0].populate({
       path: "cycleId",
       select: "cycleCount totalDue balance dateDue status",
     });
-    await payment.populate("createdBy", "firstName lastName email");
+    await payment[0].populate("createdBy", "firstName lastName email");
 
-    return NextResponse.json(payment, { status: 201 });
-  } catch (error) {
-    console.error("Error creating payment:", error);
+    await session.commitTransaction();
+
+    return NextResponse.json(payment[0], { status: 201 });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Payment creation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to create payment" },
+      {
+        error: "Failed to create payment",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

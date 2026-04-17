@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import RolePermission, { RolePermissionStatus } from "@/models/RolePermission";
 import { withAuth } from "@/lib/apiAuth";
@@ -56,54 +57,77 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const updateData: Record<string, unknown> = {
-      updatedBy: body.updatedBy || null,
-    };
+    await dbConnect();
 
-    // Allow updating roleId, pageId, and permissionId if provided
-    if (body.roleId) updateData.roleId = body.roleId;
-    if (body.pageId) updateData.pageId = body.pageId;
-    if (body.permissionId) updateData.permissionId = body.permissionId;
+    // Find existing assignment
+    const existingAssignment =
+      await RolePermission.findById(id).session(session);
 
-    const updatedRecord = await RolePermission.findOneAndUpdate(
-      { _id: id /* status: RolePermissionStatus.ACTIVE */ },
-      updateData,
-      { returnDocument: "after", runValidators: true },
-    )
-      .populate("roleId", "role status")
-      .populate("pageId", "page path status")
-      .populate("permissionId", "permission status");
-
-    if (!updatedRecord) {
+    if (!existingAssignment) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Assignment not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json(updatedRecord);
-  } catch (error: unknown) {
-    console.error("Error updating role-permission assignment:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
-      return NextResponse.json(
-        { error: "This role-page-permission assignment already exists" },
-        { status: 409 },
-      );
+    // Check for duplicate if IDs are being changed
+    if (body.roleId || body.pageId || body.permissionId) {
+      const duplicateAssignment = await RolePermission.findOne({
+        roleId: body.roleId || existingAssignment.roleId,
+        pageId: body.pageId || existingAssignment.pageId,
+        permissionId: body.permissionId || existingAssignment.permissionId,
+        _id: { $ne: id },
+      }).session(session);
+
+      if (duplicateAssignment) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: "This role-page-permission assignment already exists" },
+          { status: 409 },
+        );
+      }
     }
+
+    // Update fields
+    if (body.roleId) existingAssignment.roleId = body.roleId;
+    if (body.pageId) existingAssignment.pageId = body.pageId;
+    if (body.permissionId) existingAssignment.permissionId = body.permissionId;
+    existingAssignment.updatedBy = user._id;
+    existingAssignment.updatedAt = new Date();
+
+    await existingAssignment.save({ session });
+
+    // Populate before returning
+    const updatedRecord = await RolePermission.findById(id)
+      .populate("roleId", "role status")
+      .populate("pageId", "page path status")
+      .populate("permissionId", "permission status")
+      .session(session);
+
+    await session.commitTransaction();
+
+    return NextResponse.json(updatedRecord);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("RolePermission update transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to update role-permission assignment" },
+      {
+        error: "Failed to update role-permission assignment",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -116,41 +140,65 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+    const body = await request.json();
+    const { reason } = body;
 
-    const deletedRecord = await RolePermission.findByIdAndUpdate(
-      id,
-      {
-        status: RolePermissionStatus.DELETED,
-        deletedAt: new Date(),
-        deletedBy: deletedBy || null,
-        deletedReason: deletedReason || null,
-      },
-      { new: true },
-    )
-      .populate("roleId", "role status")
-      .populate("pageId", "page path status")
-      .populate("permissionId", "permission status");
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
 
-    if (!deletedRecord) {
+    await dbConnect();
+
+    const existingAssignment =
+      await RolePermission.findById(id).session(session);
+
+    if (!existingAssignment) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Assignment not found" },
         { status: 404 },
       );
     }
 
+    existingAssignment.status = RolePermissionStatus.DELETED;
+    existingAssignment.deletedAt = new Date();
+    existingAssignment.deletedBy = user._id;
+    existingAssignment.deletedReason = reason;
+
+    await existingAssignment.save({ session });
+
+    // Populate before returning
+    const deletedRecord = await RolePermission.findById(id)
+      .populate("roleId", "role status")
+      .populate("pageId", "page path status")
+      .populate("permissionId", "permission status")
+      .session(session);
+
+    await session.commitTransaction();
+
     return NextResponse.json(deletedRecord);
-  } catch (error) {
-    console.error("Error deleting role-permission assignment:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("RolePermission deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete role-permission assignment" },
+      {
+        error: "Failed to delete role-permission assignment",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -163,37 +211,56 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const activatedRecord = await RolePermission.findByIdAndUpdate(
-      id,
-      {
-        status: RolePermissionStatus.ACTIVE,
-        deletedAt: null,
-        deletedBy: null,
-        deletedReason: null,
-      },
-      { new: true },
-    )
-      .populate("roleId", "role status")
-      .populate("pageId", "page path status")
-      .populate("permissionId", "permission status");
+    await dbConnect();
 
-    if (!activatedRecord) {
+    const existingAssignment =
+      await RolePermission.findById(id).session(session);
+
+    if (!existingAssignment) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Assignment not found" },
         { status: 404 },
       );
     }
 
+    existingAssignment.status = RolePermissionStatus.ACTIVE;
+    existingAssignment.deletedAt = null;
+    existingAssignment.deletedBy = null;
+    existingAssignment.deletedReason = null;
+    existingAssignment.updatedBy = user._id;
+    existingAssignment.updatedAt = new Date();
+
+    await existingAssignment.save({ session });
+
+    // Populate before returning
+    const activatedRecord = await RolePermission.findById(id)
+      .populate("roleId", "role status")
+      .populate("pageId", "page path status")
+      .populate("permissionId", "permission status")
+      .session(session);
+
+    await session.commitTransaction();
+
     return NextResponse.json(activatedRecord);
-  } catch (error) {
-    console.error("Error activating role-permission assignment:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("RolePermission activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate role-permission assignment" },
+      {
+        error: "Failed to activate role-permission assignment",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

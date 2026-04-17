@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Client, { ClientStatus } from "@/models/Client";
 import { withAuth } from "@/lib/apiAuth";
@@ -50,25 +51,23 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const {
-      firstName,
-      middleName,
-      lastName,
-      phone,
-      email,
-      address,
-      updatedBy,
-    } = body;
+    const { firstName, middleName, lastName, phone, email, address } = body;
+
+    await connectDB();
 
     // Find the client
-    const client = await Client.findById(id);
+    const client = await Client.findById(id).session(session);
 
     if (!client) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -78,9 +77,10 @@ export async function PUT(
         email: email.toLowerCase().trim(),
         _id: { $ne: id },
         // status: { $ne: ClientStatus.DELETED },
-      });
+      }).session(session);
 
       if (existingClient) {
+        await session.abortTransaction();
         return NextResponse.json(
           { error: "Client with this email already exists" },
           { status: 409 },
@@ -96,21 +96,32 @@ export async function PUT(
     if (phone) client.phone = phone.trim();
     if (email) client.email = email.toLowerCase().trim();
     if (address) client.address = address.trim();
-    if (updatedBy) client.updatedBy = updatedBy;
-    await client.save();
+    client.updatedBy = user._id;
+    client.updatedAt = new Date();
+
+    await client.save({ session });
 
     // Populate and return
     const updatedClient = await Client.findById(id)
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(updatedClient, { status: 200 });
-  } catch (error) {
-    console.error("Error updating client:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Client update transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to update client" },
+      {
+        error: "Failed to update client",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -123,40 +134,62 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
-  try {
-    await connectDB();
-    const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+  const session = await mongoose.startSession();
 
-    const client = await Client.findById(id);
+  try {
+    await session.startTransaction();
+
+    const { id } = await params;
+    const body = await request.json();
+    const { reason } = body;
+
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
+
+    await connectDB();
+
+    const client = await Client.findById(id).session(session);
 
     if (!client) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
     // Soft delete
     client.status = ClientStatus.DELETED;
     client.deletedAt = new Date();
-    if (deletedBy) client.deletedBy = deletedBy;
-    if (deletedReason) client.deletedReason = deletedReason;
+    client.deletedBy = user._id;
+    client.deletedReason = reason;
 
-    await client.save();
+    await client.save({ session });
 
     // Populate and return
     const deletedClient = await Client.findById(id)
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
-      .populate("deletedBy", "firstName lastName email");
+      .populate("deletedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(deletedClient, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting client:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Client deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete client" },
+      {
+        error: "Failed to delete client",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -169,13 +202,19 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const client = await Client.findById(id);
+    await connectDB();
+
+    const client = await Client.findById(id).session(session);
 
     if (!client) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
@@ -184,20 +223,31 @@ export async function PATCH(
     client.deletedAt = null;
     client.deletedBy = null;
     client.deletedReason = null;
+    client.updatedBy = user._id;
+    client.updatedAt = new Date();
 
-    await client.save();
+    await client.save({ session });
 
     // Populate and return
     const activatedClient = await Client.findById(id)
       .populate("createdBy", "firstName lastName email")
-      .populate("updatedBy", "firstName lastName email");
+      .populate("updatedBy", "firstName lastName email")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(activatedClient, { status: 200 });
-  } catch (error) {
-    console.error("Error activating client:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Client activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate client" },
+      {
+        error: "Failed to activate client",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

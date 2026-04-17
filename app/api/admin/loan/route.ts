@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Loan, { LoanStatus } from "@/models/Loan";
 import { withAuth } from "@/lib/apiAuth";
@@ -8,7 +9,9 @@ import "@/models/User";
 const PAGE_PATH = "/admin/loan";
 
 // Generate unique loan number
-async function generateLoanNo(): Promise<string> {
+async function generateLoanNo(
+  session: mongoose.ClientSession,
+): Promise<string> {
   try {
     // Ensure database connection
     await connectDB();
@@ -25,6 +28,7 @@ async function generateLoanNo(): Promise<string> {
       .sort({ loanNo: -1 })
       .select("loanNo")
       .limit(1)
+      .session(session)
       .lean();
 
     let sequence = 1;
@@ -107,8 +111,10 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
 
     const body = await request.json();
     const {
@@ -118,7 +124,6 @@ export async function POST(request: NextRequest) {
       terms,
       dateStarted,
       assignedStaff,
-      createdBy,
       status,
     } = body;
 
@@ -131,6 +136,7 @@ export async function POST(request: NextRequest) {
       !dateStarted ||
       !assignedStaff
     ) {
+      await session.abortTransaction();
       return NextResponse.json(
         {
           error:
@@ -142,6 +148,7 @@ export async function POST(request: NextRequest) {
 
     // Validate numeric values
     if (principal < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Principal must be a positive number" },
         { status: 400 },
@@ -149,47 +156,58 @@ export async function POST(request: NextRequest) {
     }
 
     if (interestRate < 0) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Interest rate must be a positive number" },
         { status: 400 },
       );
     }
 
-    // Auto-generate unique loan number
-    const loanNo = await generateLoanNo();
+    await connectDB();
+
+    // Auto-generate unique loan number within transaction
+    const loanNo = await generateLoanNo(session);
     console.log(`Creating loan with loanNo: ${loanNo}`);
 
     // Create loan
-    const loan = await Loan.create({
-      loanNo,
-      clientId,
-      principal,
-      interestRate,
-      terms,
-      dateStarted,
-      assignedStaff,
-      createdBy: createdBy || user?._id,
-      status: status || LoanStatus.ACTIVE,
-    });
+    const loan = await Loan.create(
+      [
+        {
+          loanNo,
+          clientId,
+          principal,
+          interestRate,
+          terms,
+          dateStarted,
+          assignedStaff,
+          createdBy: user._id,
+          status: status || LoanStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
 
     console.log(
-      `Loan created successfully with ID: ${loan._id}, loanNo: ${loan.loanNo}`,
+      `Loan created successfully with ID: ${loan[0]._id}, loanNo: ${loan[0].loanNo}`,
     );
 
     // Populate references for response
-    await loan.populate(
+    await loan[0].populate(
       "clientId",
       "firstName middleName lastName email phone address",
     );
-    await loan.populate("assignedStaff", "firstName lastName email");
-    await loan.populate("createdBy", "firstName lastName email");
+    await loan[0].populate("assignedStaff", "firstName lastName email");
+    await loan[0].populate("createdBy", "firstName lastName email");
 
-    return NextResponse.json(loan, { status: 201 });
-  } catch (error) {
-    console.error("Error creating loan:", error);
+    await session.commitTransaction();
+
+    return NextResponse.json(loan[0], { status: 201 });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Loan creation transaction error:", err);
 
     // Handle duplicate key error (if any unique constraints exist)
-    if ((error as { code?: number }).code === 11000) {
+    if ((err as { code?: number }).code === 11000) {
       return NextResponse.json(
         { error: "A loan with this loan number already exists" },
         { status: 409 },
@@ -197,8 +215,13 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Failed to create loan" },
+      {
+        error: "Failed to create loan",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

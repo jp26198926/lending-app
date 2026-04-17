@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Role, { RoleStatus } from "@/models/Role";
 import { withAuth } from "@/lib/apiAuth";
@@ -46,42 +47,67 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const updatedRecord = await Role.findOneAndUpdate(
-      { _id: id, status: RoleStatus.ACTIVE },
-      {
-        role: body.role,
-        updatedBy: body.updatedBy || null,
-      },
-      { returnDocument: "after", runValidators: true },
-    );
+    if (!body.role || body.role.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Role name is required" },
+        { status: 400 },
+      );
+    }
 
-    if (!updatedRecord) {
+    await dbConnect();
+
+    // Find existing role
+    const existingRole = await Role.findById(id).session(session);
+
+    if (!existingRole) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Role not found" }, { status: 404 });
     }
 
-    return NextResponse.json(updatedRecord);
-  } catch (error: unknown) {
-    console.error("Error updating role:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
+    // Check for duplicate (excluding current role)
+    const duplicateRole = await Role.findOne({
+      role: body.role,
+      _id: { $ne: id },
+    }).session(session);
+
+    if (duplicateRole) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Role already exists" },
         { status: 409 },
       );
     }
+
+    existingRole.role = body.role;
+    existingRole.updatedBy = user._id;
+    existingRole.updatedAt = new Date();
+
+    await existingRole.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingRole);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Role update transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to update role" },
+      {
+        error: "Failed to update role",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -94,35 +120,54 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+    const body = await request.json();
+    const { reason } = body;
 
-    const deletedRecord = await Role.findByIdAndUpdate(
-      id,
-      {
-        status: RoleStatus.DELETED,
-        deletedAt: new Date(),
-        deletedBy: deletedBy || null,
-        deletedReason: deletedReason || null,
-      },
-      { new: true },
-    );
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
 
-    if (!deletedRecord) {
+    await dbConnect();
+
+    const existingRole = await Role.findById(id).session(session);
+
+    if (!existingRole) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Role not found" }, { status: 404 });
     }
 
-    return NextResponse.json(deletedRecord);
-  } catch (error) {
-    console.error("Error deleting role:", error);
+    existingRole.status = RoleStatus.DELETED;
+    existingRole.deletedAt = new Date();
+    existingRole.deletedBy = user._id;
+    existingRole.deletedReason = reason;
+
+    await existingRole.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingRole);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Role deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete role" },
+      {
+        error: "Failed to delete role",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -135,31 +180,45 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const activatedRecord = await Role.findByIdAndUpdate(
-      id,
-      {
-        status: RoleStatus.ACTIVE,
-        deletedAt: null,
-        deletedBy: null,
-        deletedReason: null,
-      },
-      { new: true },
-    );
+    await dbConnect();
 
-    if (!activatedRecord) {
+    const existingRole = await Role.findById(id).session(session);
+
+    if (!existingRole) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Role not found" }, { status: 404 });
     }
 
-    return NextResponse.json(activatedRecord);
-  } catch (error) {
-    console.error("Error activating role:", error);
+    existingRole.status = RoleStatus.ACTIVE;
+    existingRole.deletedAt = null;
+    existingRole.deletedBy = null;
+    existingRole.deletedReason = null;
+    existingRole.updatedBy = user._id;
+    existingRole.updatedAt = new Date();
+
+    await existingRole.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingRole);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Role activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate role" },
+      {
+        error: "Failed to activate role",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

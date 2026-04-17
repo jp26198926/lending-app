@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Role, { RoleStatus } from "@/models/Role";
 import { withAuth } from "@/lib/apiAuth";
@@ -49,32 +50,61 @@ export async function POST(request: NextRequest) {
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const body = await request.json();
 
-    const newRecord = await Role.create({
-      role: body.role,
-      createdBy: body.createdBy || null,
-    });
+    if (!body.role || body.role.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Role name is required" },
+        { status: 400 },
+      );
+    }
 
-    return NextResponse.json(newRecord, { status: 201 });
-  } catch (error: unknown) {
-    console.error("Error creating role:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
+    await dbConnect();
+
+    // Check for duplicate
+    const existingRole = await Role.findOne({
+      role: body.role,
+    }).session(session);
+
+    if (existingRole) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Role already exists" },
         { status: 409 },
       );
     }
+
+    const newRecord = await Role.create(
+      [
+        {
+          role: body.role,
+          createdBy: user._id,
+          status: RoleStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+
+    return NextResponse.json(newRecord[0], { status: 201 });
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Role creation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to create role" },
+      {
+        error: "Failed to create role",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

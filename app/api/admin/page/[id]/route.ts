@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Page, { PageStatus } from "@/models/Page";
 import { withAuth } from "@/lib/apiAuth";
@@ -11,7 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Check authentication and permission
-  const { user, error } = await withAuth(request, PAGE_PATH);
+  const { error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
   try {
@@ -43,47 +44,71 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Check authentication and permission
-  const { user, error } = await withAuth(request, PAGE_PATH);
+  const { error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
-    const updatedRecord = await Page.findOneAndUpdate(
-      { _id: id /* status: PageStatus.ACTIVE */ },
-      {
-        page: body.page,
-        path: body.path,
-        parentId: body.parentId || null,
-        order: body.order,
-      },
-      { returnDocument: "after", runValidators: true },
-    );
+    if (!body.page || !body.path) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Page name and path are required" },
+        { status: 400 },
+      );
+    }
 
-    if (!updatedRecord) {
+    await dbConnect();
+
+    // Find existing page
+    const existingPage = await Page.findById(id).session(session);
+
+    if (!existingPage) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
-    return NextResponse.json(updatedRecord);
-  } catch (error: unknown) {
-    console.error("Error updating page:", error);
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === 11000
-    ) {
+    // Check for duplicate path (excluding current page)
+    const duplicatePage = await Page.findOne({
+      path: body.path,
+      _id: { $ne: id },
+    }).session(session);
+
+    if (duplicatePage) {
+      await session.abortTransaction();
       return NextResponse.json(
         { error: "Path already exists" },
         { status: 409 },
       );
     }
+
+    existingPage.page = body.page;
+    existingPage.path = body.path;
+    existingPage.parentId = body.parentId || null;
+    existingPage.order = body.order;
+
+    await existingPage.save({ session });
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingPage);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Page update transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to update page" },
+      {
+        error: "Failed to update page",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -93,33 +118,45 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Check authentication and permission
-  const { user, error } = await withAuth(request, PAGE_PATH);
+  const { error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const deletedRecord = await Page.findByIdAndUpdate(
-      id,
-      {
-        status: PageStatus.DELETED,
-        deletedAt: new Date(),
-      },
-      { new: true },
-    );
+    await dbConnect();
 
-    if (!deletedRecord) {
+    const existingPage = await Page.findById(id).session(session);
+
+    if (!existingPage) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
-    return NextResponse.json(deletedRecord);
-  } catch (error) {
-    console.error("Error deleting page:", error);
+    existingPage.status = PageStatus.DELETED;
+    existingPage.deletedAt = new Date();
+    existingPage.deletedBy = user._id;
+    existingPage.deletedReason = reason;
+
+    await session.commitTransaction();
+
+    return NextResponse.json(existingPage);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Page deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete page" },
+      {
+        error: "Failed to delete page",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -129,34 +166,44 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Check authentication and permission (using Edit permission)
-  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
+  const { error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await dbConnect();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const activatedRecord = await Page.findByIdAndUpdate(
-      id,
-      {
-        status: PageStatus.ACTIVE,
-        deletedAt: null,
-        deletedBy: null,
-        deletedReason: null,
-      },
-      { new: true },
-    );
+    await dbConnect();
 
-    if (!activatedRecord) {
+    const existingPage = await Page.findById(id).session(session);
+
+    if (!existingPage) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "Page not found" }, { status: 404 });
     }
 
-    return NextResponse.json(activatedRecord);
-  } catch (error) {
-    console.error("Error activating page:", error);
+    existingPage.status = PageStatus.ACTIVE;
+    existingPage.deletedAt = null;
+    existingPage.deletedBy = null;
+    existingPage.deletedReason = null;
+    existingPage.updatedBy = user._id;
+    existingPage.updatedAt = new Date();
+
+    return NextResponse.json(existingPage);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("Page activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate page" },
+      {
+        error: "Failed to activate page",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }

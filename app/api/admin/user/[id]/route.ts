@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import User, { UserStatus } from "@/models/User";
 import { withAuth } from "@/lib/apiAuth";
@@ -52,8 +53,11 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
     const body = await request.json();
 
@@ -68,26 +72,29 @@ export async function PUT(
       cashReceivable,
       capitalContribution,
       profitEarned,
-      updatedBy,
       status,
     } = body;
 
-    // Find the user
-    const user = await User.findById(id);
+    await connectDB();
 
-    if (!user) {
+    // Find the user
+    const existingUser = await User.findById(id).session(session);
+
+    if (!existingUser) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // Check if email is being changed and if it conflicts with another user
-    if (email && email.toLowerCase().trim() !== user.email) {
-      const existingUser = await User.findOne({
+    if (email && email.toLowerCase().trim() !== existingUser.email) {
+      const duplicateUser = await User.findOne({
         email: email.toLowerCase().trim(),
         _id: { $ne: id },
         // status: { $ne: UserStatus.DELETED },
-      });
+      }).session(session);
 
-      if (existingUser) {
+      if (duplicateUser) {
+        await session.abortTransaction();
         return NextResponse.json(
           { error: "User with this email already exists" },
           { status: 409 },
@@ -96,36 +103,47 @@ export async function PUT(
     }
 
     // Update fields
-    if (email) user.email = email.toLowerCase().trim();
-    if (password) user.password = password;
-    if (firstName) user.firstName = firstName.trim();
-    if (lastName) user.lastName = lastName.trim();
-    if (phone) user.phone = phone.trim();
-    if (roleId) user.roleId = roleId;
-    if (rate !== undefined) user.rate = rate;
-    if (cashReceivable !== undefined) user.cashReceivable = cashReceivable;
+    if (email) existingUser.email = email.toLowerCase().trim();
+    if (password) existingUser.password = password;
+    if (firstName) existingUser.firstName = firstName.trim();
+    if (lastName) existingUser.lastName = lastName.trim();
+    if (phone) existingUser.phone = phone.trim();
+    if (roleId) existingUser.roleId = roleId;
+    if (rate !== undefined) existingUser.rate = rate;
+    if (cashReceivable !== undefined)
+      existingUser.cashReceivable = cashReceivable;
     if (capitalContribution !== undefined)
-      user.capitalContribution = capitalContribution;
-    if (profitEarned !== undefined) user.profitEarned = profitEarned;
-    if (updatedBy) user.updatedBy = updatedBy;
-    if (status) user.status = status;
+      existingUser.capitalContribution = capitalContribution;
+    if (profitEarned !== undefined) existingUser.profitEarned = profitEarned;
+    existingUser.updatedBy = user._id;
+    existingUser.updatedAt = new Date();
+    if (status) existingUser.status = status;
 
-    await user.save();
+    await existingUser.save({ session });
 
     // Populate and return without password
     const updatedUser = await User.findById(id)
       .populate("roleId", "role status")
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
-      .select("-password");
+      .select("-password")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(updatedUser, { status: 200 });
-  } catch (error) {
-    console.error("Error updating user:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("User update transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to update user" },
+      {
+        error: "Failed to update user",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -138,26 +156,39 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const deletedBy = searchParams.get("deletedBy");
-    const deletedReason = searchParams.get("deletedReason");
+    const body = await request.json();
+    const { reason } = body;
 
-    const user = await User.findById(id);
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
 
-    if (!user) {
+    await connectDB();
+
+    const existingUser = await User.findById(id).session(session);
+
+    if (!existingUser) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // Soft delete
-    user.status = UserStatus.DELETED;
-    user.deletedAt = new Date();
-    if (deletedBy) user.deletedBy = deletedBy;
-    if (deletedReason) user.deletedReason = deletedReason;
+    existingUser.status = UserStatus.DELETED;
+    existingUser.deletedAt = new Date();
+    existingUser.deletedBy = user._id;
+    existingUser.deletedReason = reason;
 
-    await user.save();
+    await existingUser.save({ session });
 
     // Populate and return without password
     const deletedUser = await User.findById(id)
@@ -165,15 +196,24 @@ export async function DELETE(
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
       .populate("deletedBy", "firstName lastName email")
-      .select("-password");
+      .select("-password")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(deletedUser, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting user:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("User deletion transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to delete user" },
+      {
+        error: "Failed to delete user",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
 
@@ -186,37 +226,54 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
+  const session = await mongoose.startSession();
+
   try {
-    await connectDB();
+    await session.startTransaction();
+
     const { id } = await params;
 
-    const user = await User.findById(id);
+    await connectDB();
 
-    if (!user) {
+    const existingUser = await User.findById(id).session(session);
+
+    if (!existingUser) {
+      await session.abortTransaction();
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // Activate the user
-    user.status = UserStatus.ACTIVE;
-    user.deletedAt = null;
-    user.deletedBy = null;
-    user.deletedReason = null;
+    existingUser.status = UserStatus.ACTIVE;
+    existingUser.deletedAt = null;
+    existingUser.deletedBy = null;
+    existingUser.deletedReason = null;
+    existingUser.updatedBy = user._id;
+    existingUser.updatedAt = new Date();
 
-    await user.save();
+    await existingUser.save({ session });
 
     // Populate and return without password
     const activatedUser = await User.findById(id)
       .populate("roleId", "role status")
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
-      .select("-password");
+      .select("-password")
+      .session(session);
+
+    await session.commitTransaction();
 
     return NextResponse.json(activatedUser, { status: 200 });
-  } catch (error) {
-    console.error("Error activating user:", error);
+  } catch (err: unknown) {
+    await session.abortTransaction();
+    console.error("User activation transaction error:", err);
     return NextResponse.json(
-      { error: "Failed to activate user" },
+      {
+        error: "Failed to activate user",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 500 },
     );
+  } finally {
+    await session.endSession();
   }
 }
