@@ -309,12 +309,13 @@ export default function SettingsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Cash on Hand <span className="text-red-500">*</span>
                 </label>
-                {isEditing ? (
+                {/* {isEditing ? (
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     value={formData.cashOnHand}
+                    disabled
                     onChange={(e) =>
                       setFormData({
                         ...formData,
@@ -325,17 +326,16 @@ export default function SettingsPage() {
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
                              focus:ring-zentyal-primary focus:border-transparent transition-all"
                   />
-                ) : (
-                  <div className="px-4 py-2.5 bg-gray-50 rounded-lg">
-                    <span className="font-mono font-semibold text-lg text-green-600">
-                      ₱{" "}
-                      {settings.cashOnHand.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </div>
-                )}
+                ) : ( */}
+                <div className="px-4 py-2.5 bg-gray-50 rounded-lg">
+                  <span className="font-mono font-semibold text-lg text-green-600">
+                    {settings.cashOnHand.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                {/* )} */}
               </div>
             </div>
           </div>
