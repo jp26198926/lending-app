@@ -201,27 +201,38 @@ export default function SettingsPage() {
         )}
 
         {isEditing && (
-          <button
-            onClick={handleCancel}
-            className="w-full sm:w-auto px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 
+          <>
+            <button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="px-6 py-2.5 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark 
+                         transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Changes
+            </button>
+
+            <button
+              onClick={handleCancel}
+              className="w-full sm:w-auto px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 
                      transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105
                      flex items-center justify-center gap-2"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-            <span>Cancel</span>
-          </button>
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+              <span>Cancel</span>
+            </button>
+          </>
         )}
       </div>
 
@@ -389,7 +400,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Save Button */}
-          {isEditing && (
+          {/* {isEditing && (
             <div className="flex justify-end pt-4 border-t">
               <button
                 type="submit"
@@ -400,7 +411,7 @@ export default function SettingsPage() {
                 Save Changes
               </button>
             </div>
-          )}
+          )} */}
         </div>
       </form>
 
