@@ -98,6 +98,15 @@ export default function LedgerPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showFormModal, setShowFormModal] = useState(false);
+
+  // Helper function to format date to YYYY-MM-DD
+  const formatDate = (date: string | Date): string => {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -445,11 +454,10 @@ export default function LedgerPage() {
             sortable: true,
             render: (ledger: Ledger) => (
               <span className="text-sm text-gray-900">
-                {new Date(ledger.date).toLocaleDateString()}
+                {formatDate(ledger.date)}
               </span>
             ),
-            exportValue: (ledger: Ledger) =>
-              new Date(ledger.date).toLocaleDateString(),
+            exportValue: (ledger: Ledger) => formatDate(ledger.date),
           },
           {
             key: "type",
@@ -787,8 +795,7 @@ export default function LedgerPage() {
                 <option value="">Select Cycle (Optional)</option>
                 {cycles.map((cycle) => (
                   <option key={cycle._id} value={cycle._id}>
-                    Cycle #{cycle.cycleCount} - Due:{" "}
-                    {new Date(cycle.dateDue).toLocaleDateString()}
+                    Cycle #{cycle.cycleCount} - Due: {formatDate(cycle.dateDue)}
                   </option>
                 ))}
               </select>

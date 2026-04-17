@@ -118,6 +118,15 @@ export default function LedgerDetailPage() {
   ];
   const ledgerDirections = ["In", "Out"];
 
+  // Helper function to format date to YYYY-MM-DD
+  const formatDate = (date: string | Date): string => {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const fetchLedger = async () => {
     try {
       setLoading(true);
@@ -500,11 +509,7 @@ export default function LedgerDetailPage() {
                   />
                 ) : (
                   <div className="px-4 py-2.5 bg-gray-50 rounded-lg text-gray-900 font-medium">
-                    {new Date(ledger.date).toLocaleDateString(undefined, {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+                    {formatDate(ledger.date)}
                   </div>
                 )}
               </div>
@@ -751,7 +756,7 @@ export default function LedgerDetailPage() {
                     {cycles.map((cycle) => (
                       <option key={cycle._id} value={cycle._id}>
                         Cycle #{cycle.cycleCount} - Due:{" "}
-                        {new Date(cycle.dateDue).toLocaleDateString()}
+                        {formatDate(cycle.dateDue)}
                       </option>
                     ))}
                   </select>
