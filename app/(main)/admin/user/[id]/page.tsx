@@ -34,9 +34,10 @@ interface User {
     status: string;
   };
   rate: number;
-  cashReceivable: number;
+  cashWithdrawable: number;
   capitalContribution: number;
   profitEarned: number;
+  totalWithdrawn: number;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -222,10 +223,10 @@ export default function UserDetailPage() {
               <BanknotesIcon className="h-8 w-8" />
             </div>
           </div>
-          <p className="text-sm text-green-100 mb-1">Cash Receivable</p>
+          <p className="text-sm text-green-100 mb-1">Cash Withdrawable</p>
           <p className="text-3xl font-bold">
             ₱
-            {user.cashReceivable.toLocaleString("en-US", {
+            {(user.cashWithdrawable || 0).toLocaleString("en-US", {
               minimumFractionDigits: 2,
             })}
           </p>
@@ -241,7 +242,7 @@ export default function UserDetailPage() {
           <p className="text-sm text-orange-100 mb-1">Capital Contribution</p>
           <p className="text-3xl font-bold">
             ₱
-            {user.capitalContribution.toLocaleString("en-US", {
+            {(user.capitalContribution || 0).toLocaleString("en-US", {
               minimumFractionDigits: 2,
             })}
           </p>
@@ -257,7 +258,23 @@ export default function UserDetailPage() {
           <p className="text-sm text-purple-100 mb-1">Profit Earned</p>
           <p className="text-3xl font-bold">
             ₱
-            {user.profitEarned.toLocaleString("en-US", {
+            {(user.profitEarned || 0).toLocaleString("en-US", {
+              minimumFractionDigits: 2,
+            })}
+          </p>
+        </div>
+
+        {/* Total Withdrawn */}
+        <div className="bg-red-600 rounded-xl shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+              <BanknotesIcon className="h-8 w-8" />
+            </div>
+          </div>
+          <p className="text-sm text-red-100 mb-1">Total Withdrawn</p>
+          <p className="text-3xl font-bold">
+            ₱
+            {(user.totalWithdrawn || 0).toLocaleString("en-US", {
               minimumFractionDigits: 2,
             })}
           </p>

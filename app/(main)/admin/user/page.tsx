@@ -30,9 +30,10 @@ interface User {
     status: string;
   };
   rate: number;
-  cashReceivable: number;
+  cashWithdrawable: number;
   capitalContribution: number;
   profitEarned: number;
+  totalWithdrawn: number;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -53,9 +54,10 @@ export default function UserPage() {
     phone: "",
     roleId: "",
     rate: 0,
-    cashReceivable: 0,
+    cashWithdrawable: 0,
     capitalContribution: 0,
     profitEarned: 0,
+    totalWithdrawn: 0,
     status: "ACTIVE",
   });
   const [isEditing, setIsEditing] = useState(false);
@@ -181,9 +183,10 @@ export default function UserPage() {
               phone: formData.phone,
               roleId: formData.roleId,
               rate: formData.rate,
-              cashReceivable: formData.cashReceivable,
+              cashWithdrawable: formData.cashWithdrawable,
               capitalContribution: formData.capitalContribution,
               profitEarned: formData.profitEarned,
+              totalWithdrawn: formData.totalWithdrawn,
               status: formData.status,
             }
           : formData;
@@ -232,9 +235,10 @@ export default function UserPage() {
       phone: user.phone,
       roleId: user.roleId._id,
       rate: user.rate,
-      cashReceivable: user.cashReceivable,
+      cashWithdrawable: user.cashWithdrawable,
       capitalContribution: user.capitalContribution,
       profitEarned: user.profitEarned,
+      totalWithdrawn: user.totalWithdrawn,
       status: user.status,
     });
     setIsEditing(true);
@@ -409,9 +413,10 @@ export default function UserPage() {
       phone: "",
       roleId: "",
       rate: 0,
-      cashReceivable: 0,
+      cashWithdrawable: 0,
       capitalContribution: 0,
       profitEarned: 0,
+      totalWithdrawn: 0,
       status: "ACTIVE",
     });
     setIsEditing(false);
@@ -523,20 +528,20 @@ export default function UserPage() {
             render: (user: User) => (
               <div className="text-right">
                 <span className="text-sm text-gray-900 font-mono">
-                  {user.rate.toFixed(2)}%
+                  {(user.rate || 0).toFixed(2)}%
                 </span>
               </div>
             ),
-            exportValue: (user: User) => `${user.rate.toFixed(2)}%`,
+            exportValue: (user: User) => `${(user.rate || 0).toFixed(2)}%`,
           },
           {
-            key: "cashReceivable",
-            label: "Cash Receivable",
+            key: "cashWithdrawable",
+            label: "Cash Withdrawable",
             sortable: true,
             render: (user: User) => (
               <div className="text-right">
                 <span className="text-sm text-gray-900 font-mono">
-                  {user.cashReceivable.toLocaleString(undefined, {
+                  {(user.cashWithdrawable || 0).toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
@@ -544,7 +549,7 @@ export default function UserPage() {
               </div>
             ),
             exportValue: (user: User) =>
-              `${user.cashReceivable.toLocaleString(undefined, {
+              `${(user.cashWithdrawable || 0).toLocaleString(undefined, {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}`,
@@ -869,16 +874,16 @@ export default function UserPage() {
             {/* Cash Receivable */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cash Receivable ()
+                Cash Withdrawable (₱)
               </label>
               <input
                 type="number"
                 step="0.01"
-                value={formData.cashReceivable}
+                value={formData.cashWithdrawable}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    cashReceivable: Number(e.target.value),
+                    cashWithdrawable: Number(e.target.value),
                   })
                 }
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
@@ -919,6 +924,26 @@ export default function UserPage() {
                   setFormData({
                     ...formData,
                     profitEarned: Number(e.target.value),
+                  })
+                }
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+              />
+            </div>
+
+            {/* Total Withdrawn */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Total Withdrawn (₱)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.totalWithdrawn}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    totalWithdrawn: Number(e.target.value),
                   })
                 }
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 

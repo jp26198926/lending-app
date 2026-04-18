@@ -55,10 +55,10 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-white/80 text-sm font-medium">
-                Cash Receivable
+                Cash Withdrawable
               </p>
               <h3 className="text-2xl font-bold mt-1">
-                ₱{user?.cashReceivable?.toLocaleString() || 0}
+                ₱{user?.cashWithdrawable?.toLocaleString() || 0}
               </h3>
             </div>
             <div className="w-12 h-12 bg-white/20 rounded-lg flex items-center justify-center">

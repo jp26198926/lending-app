@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
       { session },
     );
 
-    // If Capital In with userId, update user's cashReceivable and capitalContribution
+    // If Capital In with userId, update user's cashWithdrawable and capitalContribution
     let userUpdated = false;
     if (type === "Capital In" && userId) {
       const targetUser = await User.findById(userId).session(session);
@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
           userId,
           {
             $inc: {
-              cashReceivable: amount,
+              cashWithdrawable: amount,
               capitalContribution: amount,
             },
             $set: {
@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
         ...(userUpdated && {
           userUpdated: {
             userId,
-            cashReceivableAdded: amount,
+            cashWithdrawableAdded: amount,
             capitalContributionAdded: amount,
           },
         }),

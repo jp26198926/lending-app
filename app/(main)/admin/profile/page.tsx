@@ -34,9 +34,10 @@ interface ProfileUser {
     role: string;
   };
   rate: number;
-  cashReceivable: number;
+  cashWithdrawable: number;
   capitalContribution: number;
   profitEarned: number;
+  totalWithdrawn: number;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -102,12 +103,12 @@ export default function ProfilePage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | undefined) => {
     // return new Intl.NumberFormat("en-US", {
     //   style: "currency",
     //   currency: "PHP",
-    // }).format(amount);
-    return amount.toFixed(2);
+    // }).format(amount || 0);
+    return (amount || 0).toFixed(2);
   };
 
   const formatDate = (dateString: string) => {
@@ -487,15 +488,16 @@ export default function ProfilePage() {
               Financial Information
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Cash Receivable */}
+              {/* Profit Earned */}
+              {/* <div className="flex items-start gap-3 sm:col-span-2"> */}
               <div className="flex items-start gap-3">
-                <BanknotesIcon className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                <TrophyIcon className="h-5 w-5 text-orange-600 mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs sm:text-sm font-medium text-gray-500">
-                    Cash Receivable
+                    Profit Earned
                   </p>
-                  <p className="mt-1 text-sm sm:text-base font-semibold text-green-600">
-                    {formatCurrency(profile.cashReceivable)}
+                  <p className="mt-1 text-sm sm:text-base font-semibold text-orange-600">
+                    {formatCurrency(profile.profitEarned)}
                   </p>
                 </div>
               </div>
@@ -513,15 +515,29 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Profit Earned */}
-              <div className="flex items-start gap-3 sm:col-span-2">
-                <TrophyIcon className="h-5 w-5 text-orange-600 mt-0.5 shrink-0" />
+              {/* Cash Withdrawable */}
+              <div className="flex items-start gap-3">
+                <BanknotesIcon className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs sm:text-sm font-medium text-gray-500">
-                    Profit Earned
+                    Cash Withdrawable
                   </p>
-                  <p className="mt-1 text-sm sm:text-base font-semibold text-orange-600">
-                    {formatCurrency(profile.profitEarned)}
+                  <p className="mt-1 text-sm sm:text-base font-semibold text-green-600">
+                    {formatCurrency(profile.cashWithdrawable)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Total Withdrawn */}
+              {/* <div className="flex items-start gap-3 sm:col-span-2"> */}
+              <div className="flex items-start gap-3">
+                <BanknotesIcon className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-gray-500">
+                    Total Withdrawn
+                  </p>
+                  <p className="mt-1 text-sm sm:text-base font-semibold text-red-600">
+                    {formatCurrency(profile.totalWithdrawn)}
                   </p>
                 </div>
               </div>

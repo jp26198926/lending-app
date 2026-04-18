@@ -14,9 +14,10 @@ interface User {
   firstName: string;
   lastName: string;
   rate?: number;
-  cashReceivable?: number;
+  cashWithdrawable?: number;
   capitalContribution?: number;
   profitEarned?: number;
+  totalWithdrawn?: number;
 }
 
 interface PageInfo {

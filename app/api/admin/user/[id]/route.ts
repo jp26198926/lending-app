@@ -69,9 +69,10 @@ export async function PUT(
       phone,
       roleId,
       rate,
-      cashReceivable,
+      cashWithdrawable,
       capitalContribution,
       profitEarned,
+      totalWithdrawn,
       status,
     } = body;
 
@@ -110,11 +111,13 @@ export async function PUT(
     if (phone) existingUser.phone = phone.trim();
     if (roleId) existingUser.roleId = roleId;
     if (rate !== undefined) existingUser.rate = rate;
-    if (cashReceivable !== undefined)
-      existingUser.cashReceivable = cashReceivable;
+    if (cashWithdrawable !== undefined)
+      existingUser.cashWithdrawable = cashWithdrawable;
     if (capitalContribution !== undefined)
       existingUser.capitalContribution = capitalContribution;
     if (profitEarned !== undefined) existingUser.profitEarned = profitEarned;
+    if (totalWithdrawn !== undefined)
+      existingUser.totalWithdrawn = totalWithdrawn;
     existingUser.updatedBy = user._id;
     existingUser.updatedAt = new Date();
     if (status) existingUser.status = status;

@@ -286,14 +286,14 @@ export async function DELETE(
       );
     }
 
-    // If Capital In with userId, deduct from user's cashReceivable and capitalContribution
+    // If Capital In with userId, deduct from user's cashWithdrawable and capitalContribution
     if (ledger.type === "Capital In" && ledger.userId) {
       const targetUser = await User.findById(ledger.userId).session(session);
 
       if (targetUser) {
         // Prevent negative values
         if (
-          targetUser.cashReceivable < ledger.amount ||
+          targetUser.cashWithdrawable < ledger.amount ||
           targetUser.capitalContribution < ledger.amount
         ) {
           await session.abortTransaction();
@@ -301,7 +301,7 @@ export async function DELETE(
             {
               error:
                 "Insufficient user balance to reverse this Capital In transaction.",
-              userCashReceivable: targetUser.cashReceivable,
+              userCashWithdrawable: targetUser.cashWithdrawable,
               userCapitalContribution: targetUser.capitalContribution,
               requestedDeduction: ledger.amount,
             },
@@ -313,7 +313,7 @@ export async function DELETE(
           ledger.userId,
           {
             $inc: {
-              cashReceivable: -ledger.amount,
+              cashWithdrawable: -ledger.amount,
               capitalContribution: -ledger.amount,
             },
             $set: {

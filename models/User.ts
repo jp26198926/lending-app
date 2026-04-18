@@ -16,9 +16,10 @@ export interface IUser extends Document {
   phone: string;
   roleId: mongoose.Types.ObjectId | string;
   rate: number;
-  cashReceivable: number;
+  cashWithdrawable: number;
   capitalContribution: number;
   profitEarned: number;
+  totalWithdrawn: number;
   createdAt: Date;
   updatedAt: Date;
   createdBy: mongoose.Types.ObjectId | string;
@@ -69,11 +70,15 @@ const UserSchema = new Schema<IUser>(
       required: [true, "Rate is required"],
       default: 0,
     },
-    cashReceivable: {
+    cashWithdrawable: {
       type: Number,
       default: 0,
     },
     capitalContribution: {
+      type: Number,
+      default: 0,
+    },
+    totalWithdrawn: {
       type: Number,
       default: 0,
     },

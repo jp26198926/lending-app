@@ -93,9 +93,10 @@ export async function POST(request: NextRequest) {
       phone,
       roleId,
       rate,
-      cashReceivable,
+      cashWithdrawable,
       capitalContribution,
       profitEarned,
+      totalWithdrawn,
       status,
     } = body;
 
@@ -138,9 +139,10 @@ export async function POST(request: NextRequest) {
           phone: phone.trim(),
           roleId,
           rate: rate || 0,
-          cashReceivable: cashReceivable || 0,
+          cashWithdrawable: cashWithdrawable || 0,
           capitalContribution: capitalContribution || 0,
           profitEarned: profitEarned || 0,
+          totalWithdrawn: totalWithdrawn || 0,
           createdBy: user._id,
           status: status || UserStatus.ACTIVE,
         },

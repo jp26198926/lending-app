@@ -1494,7 +1494,7 @@ Before committing code, verify:
 - Mobile breakpoint: 640px (sm), 768px (md), 1024px (lg)
 - All detail page buttons: full-width on mobile, center-justified contentuthentication: email, password (hashed)
 - Profile: firstName, lastName, phone
-- Financial: rate, cashReceivable, capitalContribution, profitEarned
+- Financial: rate, cashWithdrawable, capitalContribution, profitEarned, totalWithdrawn
 - Relations: roleId → Role
 - Audit: createdBy, updatedBy, deletedBy, timestamps
 
