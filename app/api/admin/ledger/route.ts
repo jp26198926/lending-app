@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Ledger, { LedgerStatus } from "@/models/Ledger";
+import Settings from "@/models/Settings";
+import User from "@/models/User";
 import { withAuth } from "@/lib/apiAuth";
-import "@/models/User";
 import "@/models/Loan";
 import "@/models/Cycle";
 import "@/models/Payment";
@@ -13,7 +14,7 @@ const PAGE_PATH = "/admin/ledger";
 // GET - Fetch all ledger entries with optional filtering
 export async function GET(request: NextRequest) {
   // Check authentication and permission
-  const { user, error } = await withAuth(request, PAGE_PATH);
+  const { error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
   try {
@@ -144,15 +145,15 @@ export async function POST(request: NextRequest) {
       [
         {
           date,
-          userId,
+          userId: userId || undefined,
           type,
           direction,
           amount,
-          loanId,
-          cycleId,
-          paymentId,
+          loanId: loanId || undefined,
+          cycleId: cycleId || undefined,
+          paymentId: paymentId || undefined,
           description,
-          createdBy: user._id,
+          createdBy: user!.userId,
           status: status || LedgerStatus.COMPLETED,
         },
       ],
@@ -179,9 +180,91 @@ export async function POST(request: NextRequest) {
     });
     await ledger[0].populate("createdBy", "firstName lastName email");
 
+    // Update cash on hand in settings
+    const settings = await Settings.findOne().session(session);
+
+    if (!settings) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Settings not found. Please configure settings first." },
+        { status: 404 },
+      );
+    }
+
+    // Calculate the change in cash on hand
+    const cashChange = direction === "In" ? amount : -amount;
+    const newCashOnHand = settings.cashOnHand + cashChange;
+
+    // Prevent negative cash on hand
+    if (newCashOnHand < 0) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error: "Insufficient cash on hand. Cannot complete this transaction.",
+          currentBalance: settings.cashOnHand,
+          requestedAmount: amount,
+        },
+        { status: 400 },
+      );
+    }
+
+    // Update settings with new cash on hand
+    await Settings.findByIdAndUpdate(
+      settings._id,
+      {
+        $set: {
+          cashOnHand: newCashOnHand,
+          updatedBy: user!.userId,
+          updatedAt: new Date(),
+        },
+      },
+      { session },
+    );
+
+    // If Capital In with userId, update user's cashReceivable and capitalContribution
+    let userUpdated = false;
+    if (type === "Capital In" && userId) {
+      const targetUser = await User.findById(userId).session(session);
+
+      if (targetUser) {
+        await User.findByIdAndUpdate(
+          userId,
+          {
+            $inc: {
+              cashReceivable: amount,
+              capitalContribution: amount,
+            },
+            $set: {
+              updatedBy: user!.userId,
+              updatedAt: new Date(),
+            },
+          },
+          { session },
+        );
+        userUpdated = true;
+      }
+    }
+
     await session.commitTransaction();
 
-    return NextResponse.json(ledger[0], { status: 201 });
+    return NextResponse.json(
+      {
+        ...ledger[0].toObject(),
+        cashOnHandUpdated: {
+          previous: settings.cashOnHand,
+          change: cashChange,
+          current: newCashOnHand,
+        },
+        ...(userUpdated && {
+          userUpdated: {
+            userId,
+            cashReceivableAdded: amount,
+            capitalContributionAdded: amount,
+          },
+        }),
+      },
+      { status: 201 },
+    );
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Ledger creation transaction error:", err);

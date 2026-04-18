@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Ledger, { LedgerStatus } from "@/models/Ledger";
+import Settings from "@/models/Settings";
+import User from "@/models/User";
 import { withAuth } from "@/lib/apiAuth";
-import "@/models/User";
 import "@/models/Loan";
 import "@/models/Cycle";
 import "@/models/Payment";
@@ -134,7 +135,7 @@ export async function PUT(
     if (paymentId !== undefined) ledger.paymentId = paymentId;
     if (description !== undefined) ledger.description = description;
     if (status) ledger.status = status;
-    ledger.updatedBy = user._id;
+    ledger.updatedBy = user!.userId;
     ledger.updatedAt = new Date();
 
     await ledger.save({ session });
@@ -240,10 +241,90 @@ export async function DELETE(
     // Soft delete (cancel)
     ledger.status = LedgerStatus.CANCELLED;
     ledger.deletedAt = new Date();
-    ledger.deletedBy = user._id;
+    ledger.deletedBy = user!.userId;
     ledger.deletedReason = reason;
 
     await ledger.save({ session });
+
+    // If direction is "In", deduct from settings cash on hand
+    if (ledger.direction === "In") {
+      const settings = await Settings.findOne().session(session);
+
+      if (!settings) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { error: "Settings not found. Cannot reverse cash on hand." },
+          { status: 404 },
+        );
+      }
+
+      const newCashOnHand = settings.cashOnHand - ledger.amount;
+
+      // Prevent negative cash on hand
+      if (newCashOnHand < 0) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          {
+            error: "Insufficient cash on hand to reverse this transaction.",
+            currentBalance: settings.cashOnHand,
+            requestedDeduction: ledger.amount,
+          },
+          { status: 400 },
+        );
+      }
+
+      await Settings.findByIdAndUpdate(
+        settings._id,
+        {
+          $set: {
+            cashOnHand: newCashOnHand,
+            updatedBy: user!.userId,
+            updatedAt: new Date(),
+          },
+        },
+        { session },
+      );
+    }
+
+    // If Capital In with userId, deduct from user's cashReceivable and capitalContribution
+    if (ledger.type === "Capital In" && ledger.userId) {
+      const targetUser = await User.findById(ledger.userId).session(session);
+
+      if (targetUser) {
+        // Prevent negative values
+        if (
+          targetUser.cashReceivable < ledger.amount ||
+          targetUser.capitalContribution < ledger.amount
+        ) {
+          await session.abortTransaction();
+          return NextResponse.json(
+            {
+              error:
+                "Insufficient user balance to reverse this Capital In transaction.",
+              userCashReceivable: targetUser.cashReceivable,
+              userCapitalContribution: targetUser.capitalContribution,
+              requestedDeduction: ledger.amount,
+            },
+            { status: 400 },
+          );
+        }
+
+        await User.findByIdAndUpdate(
+          ledger.userId,
+          {
+            $inc: {
+              cashReceivable: -ledger.amount,
+              capitalContribution: -ledger.amount,
+            },
+            $set: {
+              updatedBy: user!.userId,
+              updatedAt: new Date(),
+            },
+          },
+          { session },
+        );
+      }
+    }
 
     // Populate and return
     const deletedLedger = await Ledger.findById(id)

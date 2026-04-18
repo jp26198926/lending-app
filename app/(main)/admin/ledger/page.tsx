@@ -6,7 +6,6 @@ import { usePageAccess } from "@/hooks/usePageAccess";
 import { useAuth } from "@/context/AuthContext";
 import PageNotFound from "@/components/PageNotFound";
 import Modal from "@/components/Modal";
-import ConfirmModal from "@/components/ConfirmModal";
 import LoadingModal from "@/components/LoadingModal";
 import ErrorModal from "@/components/ErrorModal";
 import DataTable from "@/components/DataTable";
@@ -79,9 +78,6 @@ export default function LedgerPage() {
   const { hasPermission, user: currentUser } = useAuth();
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [loans, setLoans] = useState<Loan[]>([]);
-  const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [formData, setFormData] = useState({
     _id: "",
     date: new Date().toISOString().split("T")[0],
@@ -89,9 +85,6 @@ export default function LedgerPage() {
     type: "Capital In",
     direction: "In",
     amount: 0,
-    loanId: "",
-    cycleId: "",
-    paymentId: "",
     description: "",
     status: "Completed",
   });
@@ -107,29 +100,13 @@ export default function LedgerPage() {
     const day = String(d.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
   const [errorModal, setErrorModal] = useState({
     isOpen: false,
     message: "",
   });
 
   const canAdd = hasPermission("/admin/ledger", "Add");
-  const canEdit = hasPermission("/admin/ledger", "Edit");
-  const canDelete = hasPermission("/admin/ledger", "Delete");
-
-  const ledgerTypes = [
-    "Capital In",
-    "Loan Release",
-    "Repayment",
-    "Expense",
-    "Withdrawal",
-  ];
-  const ledgerDirections = ["In", "Out"];
 
   const fetchLedgers = async () => {
     try {
@@ -159,62 +136,25 @@ export default function LedgerPage() {
     }
   };
 
-  const fetchLoans = async () => {
-    try {
-      const res = await fetch("/api/admin/loan");
-      if (!res.ok) return;
-      const data = await res.json();
-      setLoans(data);
-    } catch (error) {
-      console.error("Error fetching loans:", error);
-    }
-  };
-
-  const fetchCycles = async (loanId: string) => {
-    if (!loanId) {
-      setCycles([]);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/admin/cycle?loanId=${loanId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setCycles(data);
-    } catch (error) {
-      console.error("Error fetching cycles:", error);
-    }
-  };
-
-  const fetchPayments = async () => {
-    try {
-      const res = await fetch("/api/admin/payment");
-      if (!res.ok) return;
-      const data = await res.json();
-      setPayments(data);
-    } catch (error) {
-      console.error("Error fetching payments:", error);
-    }
-  };
-
   useEffect(() => {
     const fetchData = async () => {
       await fetchUsers();
-      await fetchLoans();
-      await fetchPayments();
       await fetchLedgers();
     };
     fetchData();
   }, []);
 
-  // Fetch cycles when loan selection changes
+  // Auto-set direction based on type
   useEffect(() => {
-    if (formData.loanId) {
-      fetchCycles(formData.loanId);
-    } else {
-      setCycles([]);
-      setFormData((prev) => ({ ...prev, cycleId: "" }));
+    const newDirection =
+      formData.type === "Capital In" || formData.type === "Repayment"
+        ? "In"
+        : "Out";
+    if (formData.direction !== newDirection) {
+      setFormData((prev) => ({ ...prev, direction: newDirection }));
     }
-  }, [formData.loanId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.type]);
 
   if (pageLoading) {
     return (
@@ -242,9 +182,6 @@ export default function LedgerPage() {
       const payload = {
         ...formData,
         userId: formData.userId || undefined,
-        loanId: formData.loanId || undefined,
-        cycleId: formData.cycleId || undefined,
-        paymentId: formData.paymentId || undefined,
         [isEditing ? "updatedBy" : "createdBy"]: currentUser?._id,
       };
 
@@ -282,64 +219,6 @@ export default function LedgerPage() {
     }
   };
 
-  const handleEdit = (ledger: Ledger) => {
-    setFormData({
-      _id: ledger._id,
-      date: new Date(ledger.date).toISOString().split("T")[0],
-      userId: ledger.userId?._id || "",
-      type: ledger.type,
-      direction: ledger.direction,
-      amount: ledger.amount,
-      loanId: ledger.loanId?._id || "",
-      cycleId: ledger.cycleId?._id || "",
-      paymentId: ledger.paymentId?._id || "",
-      description: ledger.description || "",
-      status: ledger.status,
-    });
-    setIsEditing(true);
-    setShowFormModal(true);
-  };
-
-  const handleDeleteClick = (id: string, name: string) => {
-    setDeleteTarget({ id, name });
-    setShowDeleteModal(true);
-  };
-
-  const handleDeleteConfirm = async (reason?: string) => {
-    if (!deleteTarget || !reason) return;
-
-    setShowDeleteModal(false);
-    setShowLoadingModal(true);
-
-    try {
-      const res = await fetch(`/api/admin/ledger/${deleteTarget.id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
-      });
-
-      if (res.ok) {
-        toast.success("Ledger entry cancelled successfully! 🗑️");
-        fetchLedgers();
-      } else {
-        const error = await res.json();
-        setErrorModal({
-          isOpen: true,
-          message: error.error || "Delete failed. Please try again.",
-        });
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      setErrorModal({
-        isOpen: true,
-        message: "An unexpected error occurred. Please try again.",
-      });
-    } finally {
-      setShowLoadingModal(false);
-      setDeleteTarget(null);
-    }
-  };
-
   const handleCloseFormModal = () => {
     resetForm();
     setShowFormModal(false);
@@ -353,9 +232,6 @@ export default function LedgerPage() {
       type: "Capital In",
       direction: "In",
       amount: 0,
-      loanId: "",
-      cycleId: "",
-      paymentId: "",
       description: "",
       status: "Completed",
     });
@@ -394,13 +270,6 @@ export default function LedgerPage() {
     return `${user.firstName} ${user.lastName}`;
   };
 
-  const getClientFullName = (client: Client) => {
-    const parts = [client.firstName];
-    if (client.middleName) parts.push(client.middleName);
-    parts.push(client.lastName);
-    return parts.join(" ");
-  };
-
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
@@ -423,7 +292,7 @@ export default function LedgerPage() {
               className="px-3 sm:px-6 py-3 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark 
                        transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105
                        flex items-center space-x-2"
-              title="Add New Ledger Entry"
+              title="Add Capital In Entry"
             >
               <svg
                 className="w-5 h-5"
@@ -438,7 +307,7 @@ export default function LedgerPage() {
                   d="M12 4v16m8-8H4"
                 />
               </svg>
-              <span className="hidden sm:inline">Add New Entry</span>
+              <span className="hidden sm:inline">Add Capital In</span>
             </button>
           )}
         </div>
@@ -560,7 +429,7 @@ export default function LedgerPage() {
             sortable: false,
             searchable: false,
             render: (ledger: Ledger) => (
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-end md:justify-center gap-2">
                 <button
                   onClick={() => router.push(`/admin/ledger/${ledger._id}`)}
                   className="text-blue-600 hover:text-blue-800 transition-colors"
@@ -586,53 +455,6 @@ export default function LedgerPage() {
                     />
                   </svg>
                 </button>
-                {canEdit && ledger.status === "Completed" && (
-                  <button
-                    onClick={() => handleEdit(ledger)}
-                    className="text-yellow-600 hover:text-yellow-800 transition-colors"
-                    title="Edit Ledger Entry"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                  </button>
-                )}
-                {canDelete && ledger.status === "Completed" && (
-                  <button
-                    onClick={() =>
-                      handleDeleteClick(
-                        ledger._id,
-                        `${ledger.type} - ${ledger.amount}`,
-                      )
-                    }
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    title="Cancel Ledger Entry"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                )}
               </div>
             ),
           },
@@ -649,7 +471,7 @@ export default function LedgerPage() {
       <Modal
         isOpen={showFormModal}
         onClose={handleCloseFormModal}
-        title={isEditing ? "Edit Ledger Entry" : "Add New Ledger Entry"}
+        title={isEditing ? "Edit Ledger Entry" : "Add Capital In Entry"}
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -674,42 +496,34 @@ export default function LedgerPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Type <span className="text-red-500">*</span>
               </label>
-              <select
+              <input
+                type="text"
                 value={formData.type}
-                onChange={(e) =>
-                  setFormData({ ...formData, type: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                required
-              >
-                {ledgerTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-100 
+                         text-gray-600 cursor-not-allowed"
+                disabled
+                readOnly
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Only Capital In transactions allowed
+              </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Direction <span className="text-red-500">*</span>
               </label>
-              <select
+              <input
+                type="text"
                 value={formData.direction}
-                onChange={(e) =>
-                  setFormData({ ...formData, direction: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                required
-              >
-                {ledgerDirections.map((direction) => (
-                  <option key={direction} value={direction}>
-                    {direction}
-                  </option>
-                ))}
-              </select>
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-100 
+                         text-gray-600 cursor-not-allowed"
+                disabled
+                readOnly
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Auto-set based on type
+              </p>
             </div>
 
             <div>
@@ -735,7 +549,7 @@ export default function LedgerPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                User
+                Credit From
               </label>
               <select
                 value={formData.userId}
@@ -751,95 +565,6 @@ export default function LedgerPage() {
                     {getUserFullName(user)}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Loan
-              </label>
-              <select
-                value={formData.loanId}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    loanId: e.target.value,
-                    cycleId: "",
-                  })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              >
-                <option value="">Select Loan (Optional)</option>
-                {loans.map((loan) => (
-                  <option key={loan._id} value={loan._id}>
-                    {loan.loanNo} - {getClientFullName(loan.clientId)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cycle
-              </label>
-              <select
-                value={formData.cycleId}
-                onChange={(e) =>
-                  setFormData({ ...formData, cycleId: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                disabled={!formData.loanId}
-              >
-                <option value="">Select Cycle (Optional)</option>
-                {cycles.map((cycle) => (
-                  <option key={cycle._id} value={cycle._id}>
-                    Cycle #{cycle.cycleCount} - Due: {formatDate(cycle.dateDue)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Payment
-              </label>
-              <select
-                value={formData.paymentId}
-                onChange={(e) =>
-                  setFormData({ ...formData, paymentId: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              >
-                <option value="">Select Payment (Optional)</option>
-                {payments.map((payment) => (
-                  <option key={payment._id} value={payment._id}>
-                    {payment.paymentNo} -{" "}
-                    {payment.amount.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                    })}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) =>
-                  setFormData({ ...formData, status: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                required
-              >
-                <option value="Completed">Completed</option>
-                <option value="Cancelled">Cancelled</option>
               </select>
             </div>
 
@@ -860,7 +585,7 @@ export default function LedgerPage() {
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
+          <div className="flex justify-end gap-3 pt-4 ">
             <button
               type="button"
               onClick={handleCloseFormModal}
@@ -880,22 +605,6 @@ export default function LedgerPage() {
           </div>
         </form>
       </Modal>
-
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setDeleteTarget(null);
-        }}
-        onConfirm={handleDeleteConfirm}
-        title="Cancel Ledger Entry"
-        message={`Are you sure you want to cancel this ledger entry "${deleteTarget?.name}"? This action cannot be undone.`}
-        confirmText="Cancel Entry"
-        cancelText="Close"
-        requireReason={true}
-        isLoading={loading}
-      />
 
       {/* Loading Modal */}
       <LoadingModal
