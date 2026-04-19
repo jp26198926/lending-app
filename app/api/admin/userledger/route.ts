@@ -114,7 +114,10 @@ export async function POST(request: NextRequest) {
 
     // Populate references for response
     await userLedger[0].populate("userId", "firstName lastName email");
-    await userLedger[0].populate("loanId", "loanNo clientId principal interestRate status");
+    await userLedger[0].populate(
+      "loanId",
+      "loanNo clientId principal interestRate status",
+    );
     await userLedger[0].populate("createdBy", "firstName lastName email");
 
     await session.commitTransaction();

@@ -20,8 +20,10 @@ import {
 } from "@heroicons/react/24/outline";
 import { LoadingSpinner, StatusBadge } from "@/components/CRUDComponents";
 import ErrorModal from "@/components/ErrorModal";
+import SuccessModal from "@/components/SuccessModal";
 import Modal from "@/components/Modal";
 import LoadingModal from "@/components/LoadingModal";
+import DataTable from "@/components/DataTable";
 
 interface ProfileUser {
   _id: string;
@@ -43,6 +45,24 @@ interface ProfileUser {
   updatedAt: string;
 }
 
+interface UserLedger {
+  _id: string;
+  date: string;
+  amount: number;
+  type: string;
+  userId: {
+    _id: string;
+    firstName: string;
+    lastName: string;
+  };
+  loanId?: {
+    _id: string;
+    loanNo: string;
+  };
+  status: string;
+  createdAt: string;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const { user: authUser, loading: authLoading } = useAuth();
@@ -50,6 +70,10 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorModal, setErrorModal] = useState({
+    isOpen: false,
+    message: "",
+  });
+  const [successModal, setSuccessModal] = useState({
     isOpen: false,
     message: "",
   });
@@ -66,6 +90,17 @@ export default function ProfilePage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+
+  // Ledger modal state
+  const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [ledgers, setLedgers] = useState<UserLedger[]>([]);
+  const [loadingLedgers, setLoadingLedgers] = useState(false);
+
+  // Withdrawal modal state
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState("");
 
   useEffect(() => {
     // Wait for auth to finish loading
@@ -100,6 +135,102 @@ export default function ProfilePage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUserLedgers = async () => {
+    if (!profile) return;
+
+    try {
+      setLoadingLedgers(true);
+      const response = await fetch(`/api/profile/userledger?status=Completed`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch ledgers");
+      }
+
+      const data = await response.json();
+      setLedgers(data);
+    } catch (error) {
+      console.error("Error fetching ledgers:", error);
+      setErrorModal({
+        isOpen: true,
+        message:
+          error instanceof Error ? error.message : "Failed to load ledgers",
+      });
+    } finally {
+      setLoadingLedgers(false);
+    }
+  };
+
+  const handleViewLedger = () => {
+    setShowLedgerModal(true);
+    fetchUserLedgers();
+  };
+
+  const handleWithdraw = async () => {
+    // Reset error
+    setWithdrawError("");
+
+    // Validate amount
+    const amount = parseFloat(withdrawAmount);
+    if (!withdrawAmount || isNaN(amount) || amount <= 0) {
+      setWithdrawError("Please enter a valid amount");
+      return;
+    }
+
+    if (profile && amount > (profile.cashWithdrawable || 0)) {
+      setWithdrawError(
+        `Insufficient balance. Available: ${formatCurrency(profile.cashWithdrawable)}`,
+      );
+      return;
+    }
+
+    try {
+      setWithdrawing(true);
+
+      const response = await fetch("/api/profile/withdraw", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ amount }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to process withdrawal");
+      }
+
+      // Success - close modal and reset form
+      setShowWithdrawModal(false);
+      setWithdrawAmount("");
+      setWithdrawError("");
+
+      // Refresh profile to show updated balances
+      await fetchProfile();
+
+      // Show success message
+      setSuccessModal({
+        isOpen: true,
+        message: `Withdrawal successful! Amount: ${formatCurrency(amount)}`,
+      });
+    } catch (error) {
+      console.error("Error processing withdrawal:", error);
+      setWithdrawError(
+        error instanceof Error ? error.message : "Failed to process withdrawal",
+      );
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  const closeWithdrawModal = () => {
+    if (!withdrawing) {
+      setShowWithdrawModal(false);
+      setWithdrawAmount("");
+      setWithdrawError("");
     }
   };
 
@@ -177,7 +308,7 @@ export default function ProfilePage() {
       setPasswordError("");
 
       // Show success message
-      setErrorModal({
+      setSuccessModal({
         isOpen: true,
         message: "Password changed successfully!",
       });
@@ -230,8 +361,80 @@ export default function ProfilePage() {
         message={errorModal.message}
       />
 
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal({ isOpen: false, message: "" })}
+        message={successModal.message}
+      />
+
       {/* Loading Modal */}
       <LoadingModal isOpen={changingPassword} message="Changing password..." />
+      <LoadingModal isOpen={withdrawing} message="Processing withdrawal..." />
+
+      {/* Withdraw Modal */}
+      <Modal
+        isOpen={showWithdrawModal}
+        onClose={closeWithdrawModal}
+        title="Withdraw Cash"
+        size="md"
+      >
+        <div className="space-y-4">
+          {/* Error Message */}
+          {withdrawError && (
+            <div className="rounded-md bg-red-50 p-3">
+              <p className="text-sm text-red-800">{withdrawError}</p>
+            </div>
+          )}
+
+          {/* Available Balance */}
+          <div className="rounded-md bg-green-50 p-3">
+            <p className="text-sm font-medium text-green-800">
+              Available Balance:{" "}
+              {formatCurrency(profile?.cashWithdrawable || 0)}
+            </p>
+          </div>
+
+          {/* Withdrawal Amount */}
+          <div>
+            <label
+              htmlFor="withdrawAmount"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Withdrawal Amount
+            </label>
+            <input
+              type="number"
+              id="withdrawAmount"
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+              placeholder="Enter amount to withdraw"
+              disabled={withdrawing}
+              min="0"
+              step="0.01"
+            />
+          </div>
+
+          {/* Buttons */}
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+            <button
+              onClick={closeWithdrawModal}
+              disabled={withdrawing}
+              className="w-full sm:flex-1 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleWithdraw}
+              disabled={withdrawing}
+              className="w-full sm:flex-1 px-4 py-2 text-sm font-semibold text-white bg-green-600 rounded-md hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Withdraw
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Change Password Modal */}
       <Modal
@@ -484,9 +687,20 @@ export default function ProfilePage() {
 
           {/* Financial Information */}
           <div className="border-b border-gray-200 px-4 py-5 sm:px-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
-              Financial Information
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                Financial Information
+              </h3>
+              <button
+                onClick={handleViewLedger}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-zentyal-primary text-white 
+                         rounded-lg hover:bg-orange-600 transition-colors duration-200 text-sm font-medium
+                         w-full sm:w-auto"
+              >
+                <BanknotesIcon className="h-5 w-5" />
+                <span>View Ledger</span>
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Profit Earned */}
               {/* <div className="flex items-start gap-3 sm:col-span-2"> */}
@@ -519,9 +733,19 @@ export default function ProfilePage() {
               <div className="flex items-start gap-3">
                 <BanknotesIcon className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs sm:text-sm font-medium text-gray-500">
-                    Cash Withdrawable
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">
+                      Cash Withdrawable
+                    </p>
+                    {(profile.cashWithdrawable || 0) > 0 && (
+                      <button
+                        onClick={() => setShowWithdrawModal(true)}
+                        className="px-2 sm:px-3 py-1 text-xs font-semibold text-white bg-green-600 rounded-md hover:bg-green-500 transition-colors"
+                      >
+                        Withdraw
+                      </button>
+                    )}
+                  </div>
                   <p className="mt-1 text-sm sm:text-base font-semibold text-green-600">
                     {formatCurrency(profile.cashWithdrawable)}
                   </p>
@@ -579,6 +803,104 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Ledger Modal */}
+      <Modal
+        isOpen={showLedgerModal}
+        onClose={() => setShowLedgerModal(false)}
+        title="User Ledger History"
+        size="xl"
+      >
+        <div className="p-2">
+          {loadingLedgers ? (
+            <div className="flex justify-center items-center py-12">
+              <LoadingSpinner />
+            </div>
+          ) : (
+            <DataTable
+              data={ledgers}
+              columns={[
+                {
+                  key: "date",
+                  label: "Date",
+                  sortable: true,
+                  searchable: true,
+                  render: (ledger: UserLedger) => (
+                    <span className="text-sm text-gray-900">
+                      {formatDate(ledger.date)}
+                    </span>
+                  ),
+                  exportValue: (ledger: UserLedger) => formatDate(ledger.date),
+                },
+                {
+                  key: "type",
+                  label: "Type",
+                  sortable: true,
+                  searchable: true,
+                  render: (ledger: UserLedger) => (
+                    <span
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        ledger.type === "CAPITAL_IN"
+                          ? "bg-blue-100 text-blue-800"
+                          : ledger.type === "EARNING"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                      }`}
+                    >
+                      {ledger.type.replace("_", " ")}
+                    </span>
+                  ),
+                  exportValue: (ledger: UserLedger) =>
+                    ledger.type.replace("_", " "),
+                },
+                {
+                  key: "amount",
+                  label: "Amount",
+                  sortable: true,
+                  render: (ledger: UserLedger) => (
+                    <div className="text-right">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {formatCurrency(ledger.amount)}
+                      </span>
+                    </div>
+                  ),
+                  exportValue: (ledger: UserLedger) =>
+                    `₱${formatCurrency(ledger.amount)}`,
+                },
+                {
+                  key: "loanId",
+                  label: "Loan",
+                  sortable: false,
+                  searchable: true,
+                  render: (ledger: UserLedger) => (
+                    <span className="text-sm text-gray-600">
+                      {ledger.loanId?.loanNo || "-"}
+                    </span>
+                  ),
+                  exportValue: (ledger: UserLedger) =>
+                    ledger.loanId?.loanNo || "-",
+                },
+                {
+                  key: "status",
+                  label: "Status",
+                  sortable: true,
+                  render: (ledger: UserLedger) => (
+                    <div className="flex justify-end md:justify-center">
+                      <StatusBadge status={ledger.status} />
+                    </div>
+                  ),
+                  exportValue: (ledger: UserLedger) => ledger.status,
+                },
+              ]}
+              itemsPerPage={10}
+              loading={false}
+              emptyMessage="No ledger records found"
+              exportFileName="user-ledger-history"
+              searchPlaceholder="Search ledger records..."
+            />
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

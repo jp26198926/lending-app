@@ -22,7 +22,10 @@ export async function GET(
     const { id } = await params;
 
     const userLedger = await UserLedger.findById(id)
-      .populate("userId", "firstName lastName email phone rate cashWithdrawable")
+      .populate(
+        "userId",
+        "firstName lastName email phone rate cashWithdrawable",
+      )
       .populate({
         path: "loanId",
         select: "loanNo clientId principal interestRate terms status",
@@ -116,7 +119,10 @@ export async function PUT(
 
     // Populate and return
     const updatedUserLedger = await UserLedger.findById(id)
-      .populate("userId", "firstName lastName email phone rate cashWithdrawable")
+      .populate(
+        "userId",
+        "firstName lastName email phone rate cashWithdrawable",
+      )
       .populate({
         path: "loanId",
         select: "loanNo clientId principal interestRate terms status",
@@ -214,7 +220,10 @@ export async function DELETE(
 
     // Populate and return
     const deletedUserLedger = await UserLedger.findById(id)
-      .populate("userId", "firstName lastName email phone rate cashWithdrawable")
+      .populate(
+        "userId",
+        "firstName lastName email phone rate cashWithdrawable",
+      )
       .populate({
         path: "loanId",
         select: "loanNo clientId principal interestRate terms status",

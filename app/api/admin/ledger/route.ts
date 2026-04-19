@@ -4,6 +4,10 @@ import connectDB from "@/lib/mongodb";
 import Ledger, { LedgerStatus } from "@/models/Ledger";
 import Settings from "@/models/Settings";
 import User from "@/models/User";
+import UserLedger, {
+  UserLedgerType,
+  UserLedgerStatus,
+} from "@/models/UserLedger";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Loan";
 import "@/models/Cycle";
@@ -223,6 +227,8 @@ export async function POST(request: NextRequest) {
 
     // If Capital In with userId, update user's cashWithdrawable and capitalContribution
     let userUpdated = false;
+    let userLedgerCreated = false;
+    let userLedgerId = null;
     if (type === "Capital In" && userId) {
       const targetUser = await User.findById(userId).session(session);
 
@@ -242,6 +248,24 @@ export async function POST(request: NextRequest) {
           { session },
         );
         userUpdated = true;
+
+        // Create UserLedger entry
+        const userLedgerEntry = await UserLedger.create(
+          [
+            {
+              date,
+              amount,
+              type: UserLedgerType.CAPITAL_IN,
+              userId,
+              loanId: loanId || undefined,
+              createdBy: user!.userId,
+              status: UserLedgerStatus.COMPLETED,
+            },
+          ],
+          { session },
+        );
+        userLedgerCreated = true;
+        userLedgerId = userLedgerEntry[0]._id;
       }
     }
 
@@ -260,6 +284,8 @@ export async function POST(request: NextRequest) {
             userId,
             cashWithdrawableAdded: amount,
             capitalContributionAdded: amount,
+            userLedgerCreated,
+            userLedgerId,
           },
         }),
       },

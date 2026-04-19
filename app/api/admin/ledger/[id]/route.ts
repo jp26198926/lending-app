@@ -4,6 +4,10 @@ import connectDB from "@/lib/mongodb";
 import Ledger, { LedgerStatus } from "@/models/Ledger";
 import Settings from "@/models/Settings";
 import User from "@/models/User";
+import UserLedger, {
+  UserLedgerType,
+  UserLedgerStatus,
+} from "@/models/UserLedger";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Loan";
 import "@/models/Cycle";
@@ -323,6 +327,26 @@ export async function DELETE(
           },
           { session },
         );
+
+        // Cancel corresponding UserLedger entry
+        // Find the UserLedger entry that matches this ledger
+        const userLedgerEntry = await UserLedger.findOne({
+          userId: ledger.userId,
+          type: UserLedgerType.CAPITAL_IN,
+          amount: ledger.amount,
+          date: ledger.date,
+          status: UserLedgerStatus.COMPLETED,
+        })
+          .sort({ createdAt: -1 })
+          .session(session);
+
+        if (userLedgerEntry) {
+          userLedgerEntry.status = UserLedgerStatus.CANCELLED;
+          userLedgerEntry.deletedAt = new Date();
+          userLedgerEntry.deletedBy = user!.userId;
+          userLedgerEntry.deletedReason = reason;
+          await userLedgerEntry.save({ session });
+        }
       }
     }
 
