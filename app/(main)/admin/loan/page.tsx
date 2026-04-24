@@ -78,6 +78,10 @@ export default function LoanPage() {
     isOpen: false,
     message: "",
   });
+  const [hasActiveCycles, setHasActiveCycles] = useState(false);
+  const [loansWithActiveCycles, setLoansWithActiveCycles] = useState<
+    Set<string>
+  >(new Set());
 
   const canAdd = hasPermission("/admin/loan", "Add");
   const canEdit = hasPermission("/admin/loan", "Edit");
@@ -88,6 +92,8 @@ export default function LoanPage() {
       const res = await fetch("/api/admin/loan");
       const data = await res.json();
       setLoans(data);
+      // Check which loans have active cycles
+      await checkAllLoansForActiveCycles();
     } catch (error) {
       console.error("Error fetching loans:", error);
       setErrorModal({
@@ -121,6 +127,48 @@ export default function LoanPage() {
     }
   };
 
+  const checkForActiveCycles = async (loanId: string) => {
+    try {
+      const res = await fetch(`/api/admin/cycle?loanId=${loanId}`);
+      if (res.ok) {
+        const cycles = await res.json();
+        // Check if any cycle has "Active" status
+        const hasActive = cycles.some(
+          (cycle: { status: string }) => cycle.status === "Active",
+        );
+        setHasActiveCycles(hasActive);
+        return hasActive;
+      }
+    } catch (error) {
+      console.error("Error checking for active cycles:", error);
+    }
+    return false;
+  };
+
+  const checkAllLoansForActiveCycles = async () => {
+    try {
+      // Fetch all cycles at once
+      const res = await fetch("/api/admin/cycle");
+      if (res.ok) {
+        const allCycles = await res.json();
+
+        // Create a set of loan IDs that have active cycles
+        const loansWithActive = new Set<string>();
+        allCycles.forEach(
+          (cycle: { loanId: { _id: string }; status: string }) => {
+            if (cycle.status === "Active" && cycle.loanId?._id) {
+              loansWithActive.add(cycle.loanId._id);
+            }
+          },
+        );
+
+        setLoansWithActiveCycles(loansWithActive);
+      }
+    } catch (error) {
+      console.error("Error checking loans for active cycles:", error);
+    }
+  };
+
   const handleAdvancedSearch = async (filters: Record<string, string>) => {
     setLoading(true);
     try {
@@ -151,6 +199,7 @@ export default function LoanPage() {
       await Promise.all([fetchLoans(), fetchClients(), fetchUsers()]);
     };
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (pageLoading) {
@@ -215,7 +264,7 @@ export default function LoanPage() {
     }
   };
 
-  const handleEdit = (loan: Loan) => {
+  const handleEdit = async (loan: Loan) => {
     setFormData({
       _id: loan._id,
       clientId: loan.clientId._id,
@@ -227,10 +276,22 @@ export default function LoanPage() {
       status: loan.status,
     });
     setIsEditing(true);
+    // Check for active cycles before showing modal
+    await checkForActiveCycles(loan._id);
     setShowFormModal(true);
   };
 
   const handleDeleteClick = (id: string, name: string) => {
+    // Check if loan has active cycles
+    if (loansWithActiveCycles.has(id)) {
+      setErrorModal({
+        isOpen: true,
+        message:
+          "Cannot delete this loan because it has active cycles. Please complete or cancel all active cycles first.",
+      });
+      return;
+    }
+
     setDeleteTarget({ id, name });
     setShowDeleteModal(true);
   };
@@ -311,6 +372,7 @@ export default function LoanPage() {
 
   const handleCloseFormModal = () => {
     resetForm();
+    setHasActiveCycles(false);
     setShowFormModal(false);
   };
 
@@ -326,6 +388,7 @@ export default function LoanPage() {
       status: "Active",
     });
     setIsEditing(false);
+    setHasActiveCycles(false);
   };
 
   const getClientFullName = (client: Client) => {
@@ -549,32 +612,34 @@ export default function LoanPage() {
                     </svg>
                   </button>
                 )}
-                {canDelete && loan.status === "Active" && (
-                  <button
-                    onClick={() =>
-                      handleDeleteClick(
-                        loan._id,
-                        `Loan for ${getClientFullName(loan.clientId)}`,
-                      )
-                    }
-                    className="p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    title="Cancel Loan"
-                  >
-                    <svg
-                      className="w-4 h-4 sm:w-5 sm:h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                {canDelete &&
+                  loan.status === "Active" &&
+                  !loansWithActiveCycles.has(loan._id) && (
+                    <button
+                      onClick={() =>
+                        handleDeleteClick(
+                          loan._id,
+                          `Loan for ${getClientFullName(loan.clientId)}`,
+                        )
+                      }
+                      className="p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Cancel Loan"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                )}
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  )}
                 {canEdit &&
                   (loan.status === "Cancelled" ||
                     loan.status === "Completed") && (
@@ -650,8 +715,10 @@ export default function LoanPage() {
                   setFormData({ ...formData, clientId: e.target.value })
                 }
                 required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled={isEditing && hasActiveCycles}
+                className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all
+                         ${isEditing && hasActiveCycles ? "bg-gray-100 cursor-not-allowed" : ""}`}
               >
                 <option value="">Select a client</option>
                 {clients.map((client) => (
@@ -660,6 +727,11 @@ export default function LoanPage() {
                   </option>
                 ))}
               </select>
+              {isEditing && hasActiveCycles && (
+                <p className="text-xs text-orange-600 mt-1">
+                  ⚠️ Cannot edit - loan has active cycles
+                </p>
+              )}
             </div>
 
             {/* Principal */}
@@ -679,10 +751,17 @@ export default function LoanPage() {
                   })
                 }
                 required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled={isEditing && hasActiveCycles}
+                className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all
+                         ${isEditing && hasActiveCycles ? "bg-gray-100 cursor-not-allowed" : ""}`}
                 placeholder="0.00"
               />
+              {isEditing && hasActiveCycles && (
+                <p className="text-xs text-orange-600 mt-1">
+                  ⚠️ Cannot edit - loan has active cycles
+                </p>
+              )}
             </div>
 
             {/* Interest Rate */}
@@ -702,10 +781,17 @@ export default function LoanPage() {
                   })
                 }
                 required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled={isEditing && hasActiveCycles}
+                className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all
+                         ${isEditing && hasActiveCycles ? "bg-gray-100 cursor-not-allowed" : ""}`}
                 placeholder="0.00"
               />
+              {isEditing && hasActiveCycles && (
+                <p className="text-xs text-orange-600 mt-1">
+                  ⚠️ Cannot edit - loan has active cycles
+                </p>
+              )}
             </div>
 
             {/* Terms */}

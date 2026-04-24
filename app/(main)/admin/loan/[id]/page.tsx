@@ -3,23 +3,15 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { usePageAccess } from "@/hooks/usePageAccess";
-import { useAuth } from "@/context/AuthContext";
 import {
-  UserCircleIcon,
   CurrencyDollarIcon,
   CalendarIcon,
   ArrowLeftIcon,
-  PencilIcon,
   ClockIcon,
-  TrashIcon,
-  CheckCircleIcon,
 } from "@heroicons/react/24/outline";
 import { LoadingSpinner, StatusBadge } from "@/components/CRUDComponents";
-import ConfirmModal from "@/components/ConfirmModal";
-import LoadingModal from "@/components/LoadingModal";
 import PageNotFound from "@/components/PageNotFound";
 import ErrorModal from "@/components/ErrorModal";
-import toast from "react-hot-toast";
 
 interface Client {
   _id: string;
@@ -61,45 +53,21 @@ export default function LoanDetailPage() {
   const router = useRouter();
   const params = useParams();
   const id = params?.id as string;
-  const isNew = id === "new";
 
   const { loading: pageLoading, accessDenied } = usePageAccess();
-  const { hasPermission, user: currentUser } = useAuth();
   const [loan, setLoan] = useState<Loan | null>(null);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(!isNew);
-  const [isEditing, setIsEditing] = useState(isNew);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showLoadingModal, setShowLoadingModal] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [errorModal, setErrorModal] = useState({
     isOpen: false,
     message: "",
   });
 
-  const [formData, setFormData] = useState({
-    clientId: "",
-    principal: 0,
-    interestRate: 0,
-    terms: "Weekly",
-    dateStarted: new Date().toISOString().split("T")[0],
-    assignedStaff: "",
-    status: "Active",
-  });
-
-  const canEdit = hasPermission("/admin/loan", "Edit");
-  const canDelete = hasPermission("/admin/loan", "Delete");
-  const canAdd = hasPermission("/admin/loan", "Add");
-
   useEffect(() => {
-    const fetchData = async () => {
-      await Promise.all([fetchClients(), fetchUsers()]);
-      if (!isNew && id) {
-        fetchLoan();
-      }
-    };
-    fetchData();
-  }, [id, isNew]);
+    if (id) {
+      fetchLoan();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   if (pageLoading) {
     return (
@@ -113,10 +81,6 @@ export default function LoanDetailPage() {
     return <PageNotFound />;
   }
 
-  if (isNew && !canAdd) {
-    return <PageNotFound />;
-  }
-
   const fetchLoan = async () => {
     setLoading(true);
     try {
@@ -124,15 +88,6 @@ export default function LoanDetailPage() {
       if (res.ok) {
         const data = await res.json();
         setLoan(data);
-        setFormData({
-          clientId: data.clientId._id,
-          principal: data.principal,
-          interestRate: data.interestRate,
-          terms: data.terms,
-          dateStarted: new Date(data.dateStarted).toISOString().split("T")[0],
-          assignedStaff: data.assignedStaff._id,
-          status: data.status,
-        });
       } else {
         setErrorModal({
           isOpen: true,
@@ -148,132 +103,6 @@ export default function LoanDetailPage() {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchClients = async () => {
-    try {
-      const res = await fetch("/api/admin/client");
-      const data = await res.json();
-      setClients(
-        data.filter((c: Client & { status: string }) => c.status === "ACTIVE"),
-      );
-    } catch (error) {
-      console.error("Error fetching clients:", error);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch("/api/admin/user");
-      const data = await res.json();
-      setUsers(
-        data.filter((u: User & { status: string }) => u.status === "ACTIVE"),
-      );
-    } catch (error) {
-      console.error("Error fetching users:", error);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowLoadingModal(true);
-
-    try {
-      const url = isNew ? "/api/admin/loan" : `/api/admin/loan/${id}`;
-      const method = isNew ? "POST" : "PUT";
-
-      const payload = {
-        ...formData,
-        [isNew ? "createdBy" : "updatedBy"]: currentUser?._id,
-      };
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        toast.success(
-          isNew
-            ? "Loan created successfully! 🎉"
-            : "Loan updated successfully! ✅",
-        );
-        if (isNew) {
-          const data = await res.json();
-          router.push(`/admin/loan/${data._id}`);
-        } else {
-          setIsEditing(false);
-          fetchLoan();
-        }
-      } else {
-        const error = await res.json();
-        setErrorModal({
-          isOpen: true,
-          message: error.error || "Operation failed. Please try again.",
-        });
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      setErrorModal({
-        isOpen: true,
-        message: "An unexpected error occurred. Please try again.",
-      });
-    } finally {
-      setShowLoadingModal(false);
-    }
-  };
-
-  const handleDelete = async (reason?: string) => {
-    if (!reason) return;
-
-    setShowDeleteModal(false);
-    setShowLoadingModal(true);
-
-    try {
-      const res = await fetch(
-        `/api/admin/loan/${id}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
-        { method: "DELETE" },
-      );
-
-      if (res.ok) {
-        toast.success("Loan cancelled successfully! 🗑️");
-        router.push("/admin/loan");
-      } else {
-        const error = await res.json();
-        setErrorModal({
-          isOpen: true,
-          message: error.error || "Delete failed. Please try again.",
-        });
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      setErrorModal({
-        isOpen: true,
-        message: "An unexpected error occurred. Please try again.",
-      });
-    } finally {
-      setShowLoadingModal(false);
-    }
-  };
-
-  const handleCancel = () => {
-    if (isNew) {
-      router.push("/admin/loan");
-    } else {
-      setIsEditing(false);
-      if (loan) {
-        setFormData({
-          clientId: loan.clientId._id,
-          principal: loan.principal,
-          interestRate: loan.interestRate,
-          terms: loan.terms,
-          dateStarted: new Date(loan.dateStarted).toISOString().split("T")[0],
-          assignedStaff: loan.assignedStaff._id,
-          status: loan.status,
-        });
-      }
     }
   };
 
@@ -306,18 +135,10 @@ export default function LoanDetailPage() {
         </button>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800">
-              {isNew ? "Create New Loan" : "Loan Details"}
-            </h1>
-            <p className="text-gray-600 mt-1">
-              {isNew
-                ? "Add a new loan to the system"
-                : isEditing
-                  ? "Edit loan information"
-                  : "View loan information"}
-            </p>
+            <h1 className="text-3xl font-bold text-gray-800">Loan Details</h1>
+            <p className="text-gray-600 mt-1">View loan information</p>
           </div>
-          {!isNew && loan && (
+          {loan && (
             <div className="flex gap-2">
               <StatusBadge status={loan.status} />
             </div>
@@ -325,213 +146,8 @@ export default function LoanDetailPage() {
         </div>
       </div>
 
-      {/* Action Buttons */}
-      {!isNew && loan && !isEditing && (
-        <div className="mb-6 flex flex-wrap gap-3 justify-center sm:justify-start">
-          {canEdit && loan.status !== "Cancelled" && (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-zentyal-primary text-white rounded-lg 
-                       hover:bg-zentyal-dark transition-all duration-200 shadow-lg hover:shadow-xl"
-            >
-              <PencilIcon className="w-5 h-5" />
-              <span>Edit Loan</span>
-            </button>
-          )}
-          {canDelete && loan.status === "Active" && (
-            <button
-              onClick={() => setShowDeleteModal(true)}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg 
-                       hover:bg-red-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-            >
-              <TrashIcon className="w-5 h-5" />
-              <span>Cancel Loan</span>
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Form */}
-      {(isNew || isEditing) && (
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white rounded-lg shadow-md p-6 mb-6"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Client */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Client <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.clientId}
-                onChange={(e) =>
-                  setFormData({ ...formData, clientId: e.target.value })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              >
-                <option value="">Select a client</option>
-                {clients.map((client) => (
-                  <option key={client._id} value={client._id}>
-                    {getClientFullName(client)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Principal */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Principal Amount () <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.principal}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    principal: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                placeholder="0.00"
-              />
-            </div>
-
-            {/* Interest Rate */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Interest Rate (%) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.interestRate}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    interestRate: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                placeholder="0.00"
-              />
-            </div>
-
-            {/* Terms */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Terms <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.terms}
-                onChange={(e) =>
-                  setFormData({ ...formData, terms: e.target.value })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              >
-                <option value="Weekly">Weekly</option>
-                <option value="Fortnightly">Fortnightly</option>
-                <option value="Monthly">Monthly</option>
-              </select>
-            </div>
-
-            {/* Date Started */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date Started <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                value={formData.dateStarted}
-                onChange={(e) =>
-                  setFormData({ ...formData, dateStarted: e.target.value })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Assigned Staff */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Assigned Staff <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.assignedStaff}
-                onChange={(e) =>
-                  setFormData({ ...formData, assignedStaff: e.target.value })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              >
-                <option value="">Select staff</option>
-                {users.map((user) => (
-                  <option key={user._id} value={user._id}>
-                    {user.firstName} {user.lastName}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Status */}
-            {!isNew && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) =>
-                    setFormData({ ...formData, status: e.target.value })
-                  }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                           focus:ring-zentyal-primary focus:border-transparent transition-all"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Form Actions */}
-          <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center sm:justify-start">
-            <button
-              type="submit"
-              className="w-full sm:w-auto px-8 py-3 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark 
-                       transition-all duration-200 font-semibold shadow-lg hover:shadow-xl"
-            >
-              {isNew ? "Create Loan" : "Update Loan"}
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="w-full sm:w-auto px-8 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 
-                       transition-all duration-200 font-semibold"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* View Mode */}
-      {!isNew && loan && !isEditing && (
+      {/* Loan Information */}
+      {loan && (
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
           {/* Loan Information */}
           <div className="p-6 border-b border-gray-200">
@@ -652,20 +268,6 @@ export default function LoanDetailPage() {
           </div>
         </div>
       )}
-
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        onConfirm={handleDelete}
-        title="Cancel Loan"
-        message="Are you sure you want to cancel this loan? This action cannot be undone."
-        confirmText="Cancel Loan"
-        requireReason={true}
-      />
-
-      {/* Loading Modal */}
-      <LoadingModal isOpen={showLoadingModal} message="Processing..." />
 
       {/* Error Modal */}
       <ErrorModal

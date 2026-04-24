@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Loan, { LoanStatus } from "@/models/Loan";
+import Cycle from "@/models/Cycle";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Client";
 import "@/models/User";
@@ -205,6 +206,23 @@ export async function DELETE(
       await session.abortTransaction();
       return NextResponse.json(
         { error: "Only active loans can be cancelled" },
+        { status: 403 },
+      );
+    }
+
+    // Check if loan has any active cycles
+    const activeCycles = await Cycle.findOne({
+      loanId: id,
+      status: "Active",
+    }).session(session);
+
+    if (activeCycles) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error:
+            "Cannot delete this loan because it has active cycles. Please complete or cancel all active cycles first.",
+        },
         { status: 403 },
       );
     }
