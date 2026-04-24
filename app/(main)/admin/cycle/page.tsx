@@ -30,13 +30,6 @@ interface Loan {
   status: string;
 }
 
-interface User {
-  _id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-}
-
 interface Cycle {
   _id: string;
   loanId: Loan;
@@ -71,11 +64,6 @@ export default function CyclePage() {
     interestRate: 0,
     interestAmount: 0,
     totalDue: 0,
-    totalPaid: 0,
-    balance: 0,
-    profitExpected: 0,
-    profitEarned: 0,
-    profitRemaining: 0,
     dateDue: new Date().toISOString().split("T")[0],
     status: "Active",
   });
@@ -164,6 +152,65 @@ export default function CyclePage() {
     }
   }, [selectedLoanId]);
 
+  // Auto-populate fields when loan is selected in form
+  useEffect(() => {
+    const handleLoanSelection = async () => {
+      if (!formData.loanId || isEditing) return;
+
+      try {
+        // Find the selected loan
+        const selectedLoan = loans.find((l) => l._id === formData.loanId);
+        if (!selectedLoan) return;
+
+        // Fetch ALL cycles for this loan (including cancelled)
+        const res = await fetch(`/api/admin/cycle?loanId=${formData.loanId}`);
+        const cyclesData = await res.json();
+
+        // For cycle count: Look at ALL cycles (including cancelled) to get next sequential number
+        const allCyclesSorted = cyclesData.sort(
+          (a: Cycle, b: Cycle) => b.cycleCount - a.cycleCount,
+        );
+        const maxCycleCount = allCyclesSorted[0]?.cycleCount || 0;
+        const nextCycleCount = maxCycleCount + 1;
+
+        // For principal: Only consider non-cancelled cycles to get the latest balance
+        const activeCycles = cyclesData
+          .filter((c: Cycle) => c.status !== "Cancelled")
+          .sort((a: Cycle, b: Cycle) => b.cycleCount - a.cycleCount);
+
+        const latestActiveCycle = activeCycles[0];
+
+        // Determine principal: use latest active cycle's balance or loan's principal
+        const principal = latestActiveCycle
+          ? latestActiveCycle.balance
+          : selectedLoan.principal;
+
+        // Get interest rate from loan
+        const interestRate = selectedLoan.interestRate;
+
+        // Calculate interest amount: principal * (interestRate / 100)
+        const interestAmount = principal * (interestRate / 100);
+
+        // Calculate total due: principal + interestAmount
+        const totalDue = principal + interestAmount;
+
+        // Update form data with calculated values
+        setFormData((prev) => ({
+          ...prev,
+          cycleCount: nextCycleCount,
+          principal: Number(principal.toFixed(2)),
+          interestRate: Number(interestRate.toFixed(2)),
+          interestAmount: Number(interestAmount.toFixed(2)),
+          totalDue: Number(totalDue.toFixed(2)),
+        }));
+      } catch (error) {
+        console.error("Error fetching loan data:", error);
+      }
+    };
+
+    handleLoanSelection();
+  }, [formData.loanId, loans, isEditing]);
+
   if (pageLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -182,6 +229,27 @@ export default function CyclePage() {
     setShowLoadingModal(true);
 
     try {
+      // Frontend validation: Check for existing active cycle when creating new cycle
+      if (!isEditing) {
+        const existingActiveCycle = cycles.find(
+          (cycle) =>
+            cycle.loanId._id === formData.loanId &&
+            cycle.status === "Active" &&
+            cycle._id !== formData._id,
+        );
+
+        if (existingActiveCycle) {
+          setErrorModal({
+            isOpen: true,
+            message:
+              "Cannot create a new cycle. An active cycle already exists for this loan. Please complete or cancel the existing cycle first.",
+          });
+          setLoading(false);
+          setShowLoadingModal(false);
+          return;
+        }
+      }
+
       const url = isEditing
         ? `/api/admin/cycle/${formData._id}`
         : "/api/admin/cycle";
@@ -235,11 +303,6 @@ export default function CyclePage() {
       interestRate: cycle.interestRate,
       interestAmount: cycle.interestAmount,
       totalDue: cycle.totalDue,
-      totalPaid: cycle.totalPaid,
-      balance: cycle.balance,
-      profitExpected: cycle.profitExpected,
-      profitEarned: cycle.profitEarned,
-      profitRemaining: cycle.profitRemaining,
       dateDue: new Date(cycle.dateDue).toISOString().split("T")[0],
       status: cycle.status,
     });
@@ -259,10 +322,13 @@ export default function CyclePage() {
     setShowLoadingModal(true);
 
     try {
-      const res = await fetch(
-        `/api/admin/cycle/${deleteTarget.id}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
-        { method: "DELETE" },
-      );
+      const res = await fetch(`/api/admin/cycle/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason }),
+      });
 
       if (res.ok) {
         toast.success("Cycle cancelled successfully! 🗑️");
@@ -287,6 +353,26 @@ export default function CyclePage() {
   };
 
   const handleActivateClick = (id: string, name: string) => {
+    // Frontend validation: Check if there's already an active cycle for this loan
+    const cycleToActivate = cycles.find((c) => c._id === id);
+    if (cycleToActivate) {
+      const hasActiveCycle = cycles.some(
+        (c) =>
+          c.loanId._id === cycleToActivate.loanId._id &&
+          c.status === "Active" &&
+          c._id !== id,
+      );
+
+      if (hasActiveCycle) {
+        setErrorModal({
+          isOpen: true,
+          message:
+            "Cannot activate this cycle. An active cycle already exists for this loan. Please cancel or complete the existing active cycle first.",
+        });
+        return;
+      }
+    }
+
     setActivateTarget({ id, name });
     setShowActivateModal(true);
   };
@@ -340,11 +426,6 @@ export default function CyclePage() {
       interestRate: 0,
       interestAmount: 0,
       totalDue: 0,
-      totalPaid: 0,
-      balance: 0,
-      profitExpected: 0,
-      profitEarned: 0,
-      profitRemaining: 0,
       dateDue: new Date().toISOString().split("T")[0],
       status: "Active",
     });
@@ -738,8 +819,10 @@ export default function CyclePage() {
                   setFormData({ ...formData, loanId: e.target.value })
                 }
                 required
+                disabled={isEditing}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                         focus:ring-zentyal-primary focus:border-transparent transition-all
+                         disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">Select a loan</option>
                 {loans.length === 0 ? (
@@ -763,37 +846,25 @@ export default function CyclePage() {
                 type="number"
                 min="1"
                 value={formData.cycleCount}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    cycleCount: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg 
+                         bg-gray-100 cursor-not-allowed"
               />
             </div>
 
             {/* Principal */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Principal () <span className="text-red-500">*</span>
+                Principal <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={formData.principal}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    principal: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg 
+                         bg-gray-100 cursor-not-allowed"
               />
             </div>
 
@@ -807,167 +878,41 @@ export default function CyclePage() {
                 step="0.01"
                 min="0"
                 value={formData.interestRate}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    interestRate: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg 
+                         bg-gray-100 cursor-not-allowed"
               />
             </div>
 
             {/* Interest Amount */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Interest Amount () <span className="text-red-500">*</span>
+                Interest Amount <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={formData.interestAmount}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    interestAmount: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg 
+                         bg-gray-100 cursor-not-allowed"
               />
             </div>
 
             {/* Total Due */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Total Due () <span className="text-red-500">*</span>
+                Total Due <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={formData.totalDue}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    totalDue: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Total Paid */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Total Paid ()
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.totalPaid}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    totalPaid: Number(e.target.value),
-                  })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Balance */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Balance () <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.balance}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    balance: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Profit Expected */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Profit Expected () <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.profitExpected}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    profitExpected: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Profit Earned */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Profit Earned ()
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.profitEarned}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    profitEarned: Number(e.target.value),
-                  })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              />
-            </div>
-
-            {/* Profit Remaining */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Profit Remaining () <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.profitRemaining}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    profitRemaining: Number(e.target.value),
-                  })
-                }
-                required
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                disabled
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg 
+                         bg-gray-100 cursor-not-allowed"
               />
             </div>
 

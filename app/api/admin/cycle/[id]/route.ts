@@ -91,13 +91,29 @@ export async function PUT(
       return NextResponse.json({ error: "Cycle not found" }, { status: 404 });
     }
 
-    // Prevent editing cancelled cycles
-    if (cycle.status === CycleStatus.CANCELLED) {
-      await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Cannot edit a cancelled cycle" },
-        { status: 403 },
-      );
+    // Security: Prevent reactivating a cancelled cycle if an active cycle already exists
+    if (
+      status &&
+      cycle.status === CycleStatus.CANCELLED &&
+      status === CycleStatus.ACTIVE
+    ) {
+      // Check for existing active cycle for this loan
+      const existingActiveCycle = await Cycle.findOne({
+        loanId: cycle.loanId,
+        status: CycleStatus.ACTIVE,
+        _id: { $ne: id }, // Exclude current cycle
+      }).session(session);
+
+      if (existingActiveCycle) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          {
+            error:
+              "Cannot reactivate this cycle. An active cycle already exists for this loan. Please cancel or complete the existing active cycle first.",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     // Validate numeric values if provided
@@ -302,6 +318,24 @@ export async function PATCH(
     if (!cycle) {
       await session.abortTransaction();
       return NextResponse.json({ error: "Cycle not found" }, { status: 404 });
+    }
+
+    // Security: Prevent activating if there's already an active cycle for this loan
+    const existingActiveCycle = await Cycle.findOne({
+      loanId: cycle.loanId,
+      status: CycleStatus.ACTIVE,
+      _id: { $ne: id }, // Exclude current cycle
+    }).session(session);
+
+    if (existingActiveCycle) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error:
+            "Cannot activate this cycle. An active cycle already exists for this loan. Please cancel or complete the existing active cycle first.",
+        },
+        { status: 409 },
+      );
     }
 
     // Activate cycle

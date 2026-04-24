@@ -75,11 +75,6 @@ export async function POST(request: NextRequest) {
       interestRate,
       interestAmount,
       totalDue,
-      totalPaid,
-      balance,
-      profitExpected,
-      profitEarned,
-      profitRemaining,
       dateDue,
       status,
     } = body;
@@ -92,16 +87,13 @@ export async function POST(request: NextRequest) {
       interestRate === undefined ||
       interestAmount === undefined ||
       totalDue === undefined ||
-      balance === undefined ||
-      profitExpected === undefined ||
-      profitRemaining === undefined ||
       !dateDue
     ) {
       await session.abortTransaction();
       return NextResponse.json(
         {
           error:
-            "Loan, cycle count, principal, interest rate, interest amount, total due, balance, profit expected, profit remaining, and due date are required",
+            "Loan, cycle count, principal, interest rate, interest amount, total due, and due date are required",
         },
         { status: 400 },
       );
@@ -134,6 +126,30 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
+    // Check for existing active cycle for this loan
+    const existingActiveCycle = await Cycle.findOne({
+      loanId,
+      status: CycleStatus.ACTIVE,
+    }).session(session);
+
+    if (existingActiveCycle) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error:
+            "Cannot create a new cycle. An active cycle already exists for this loan. Please complete or cancel the existing cycle first.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Auto-calculate derived fields
+    const totalPaid = 0; // Initially no payments
+    const balance = totalDue; // Initial balance is total due
+    const profitExpected = interestAmount; // Expected profit is the interest
+    const profitEarned = 0; // Initially no profit earned
+    const profitRemaining = profitExpected; // Initially all profit remaining
+
     // Create cycle
     const cycle = await Cycle.create(
       [
@@ -144,10 +160,10 @@ export async function POST(request: NextRequest) {
           interestRate,
           interestAmount,
           totalDue,
-          totalPaid: totalPaid || 0,
+          totalPaid,
           balance,
           profitExpected,
-          profitEarned: profitEarned || 0,
+          profitEarned,
           profitRemaining,
           dateDue,
           createdBy: user._id,
@@ -178,7 +194,10 @@ export async function POST(request: NextRequest) {
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
       return NextResponse.json(
-        { error: "A cycle with this loan and cycle count already exists" },
+        {
+          error:
+            "A cycle with this loan and cycle count already exists. Cycle counts are sequential and cannot be reused.",
+        },
         { status: 409 },
       );
     }

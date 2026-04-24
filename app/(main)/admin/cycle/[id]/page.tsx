@@ -7,7 +7,6 @@ import { useAuth } from "@/context/AuthContext";
 import PageNotFound from "@/components/PageNotFound";
 import LoadingModal from "@/components/LoadingModal";
 import ErrorModal from "@/components/ErrorModal";
-import ConfirmModal from "@/components/ConfirmModal";
 import toast from "react-hot-toast";
 
 interface Client {
@@ -64,7 +63,7 @@ export default function CycleDetailPage() {
   const params = useParams();
   const cycleId = params.id as string;
   const { loading: pageLoading, accessDenied } = usePageAccess();
-  const { hasPermission, user: currentUser } = useAuth();
+  const { user: currentUser } = useAuth();
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [formData, setFormData] = useState({
@@ -85,15 +84,10 @@ export default function CycleDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showActivateModal, setShowActivateModal] = useState(false);
   const [errorModal, setErrorModal] = useState({
     isOpen: false,
     message: "",
   });
-
-  const canEdit = hasPermission("/admin/cycle", "Edit");
-  const canDelete = hasPermission("/admin/cycle", "Delete");
 
   const fetchCycle = async () => {
     try {
@@ -157,6 +151,7 @@ export default function CycleDetailPage() {
       await fetchCycle();
     };
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycleId]);
 
   if (pageLoading || loading) {
@@ -209,69 +204,6 @@ export default function CycleDetailPage() {
       });
     } finally {
       setLoading(false);
-      setShowLoadingModal(false);
-    }
-  };
-
-  const handleDelete = async (reason?: string) => {
-    if (!reason) return;
-
-    setShowDeleteModal(false);
-    setShowLoadingModal(true);
-
-    try {
-      const res = await fetch(
-        `/api/admin/cycle/${cycleId}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
-        { method: "DELETE" },
-      );
-
-      if (res.ok) {
-        toast.success("Cycle cancelled successfully! 🗑️");
-        router.push("/admin/cycle");
-      } else {
-        const error = await res.json();
-        setErrorModal({
-          isOpen: true,
-          message: error.error || "Delete failed. Please try again.",
-        });
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      setErrorModal({
-        isOpen: true,
-        message: "An unexpected error occurred. Please try again.",
-      });
-    } finally {
-      setShowLoadingModal(false);
-    }
-  };
-
-  const handleActivate = async () => {
-    setShowActivateModal(false);
-    setShowLoadingModal(true);
-
-    try {
-      const res = await fetch(`/api/admin/cycle/${cycleId}`, {
-        method: "PATCH",
-      });
-
-      if (res.ok) {
-        toast.success("Cycle activated successfully! ✅");
-        await fetchCycle();
-      } else {
-        const error = await res.json();
-        setErrorModal({
-          isOpen: true,
-          message: error.error || "Activation failed. Please try again.",
-        });
-      }
-    } catch (error) {
-      console.error("Error:", error);
-      setErrorModal({
-        isOpen: true,
-        message: "An unexpected error occurred. Please try again.",
-      });
-    } finally {
       setShowLoadingModal(false);
     }
   };
@@ -332,126 +264,6 @@ export default function CycleDetailPage() {
             {cycle.loanId.loanNo} - {getClientFullName(cycle.loanId.clientId)}
           </p>
         </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row justify-center gap-3 mb-6">
-        {!isEditing && canEdit && cycle.status !== "Cancelled" && (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="w-full sm:w-auto px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 
-                     transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105
-                     flex items-center justify-center gap-2"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-              />
-            </svg>
-            <span>Edit Cycle</span>
-          </button>
-        )}
-
-        {!isEditing &&
-          canEdit &&
-          (cycle.status === "Cancelled" ||
-            cycle.status === "Expired" ||
-            cycle.status === "Completed") && (
-            <button
-              onClick={() => setShowActivateModal(true)}
-              className="w-full sm:w-auto px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 
-                       transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105
-                       flex items-center justify-center gap-2"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <span>Activate Cycle</span>
-            </button>
-          )}
-
-        {!isEditing && canDelete && cycle.status === "Active" && (
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            className="w-full sm:w-auto px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 
-                     transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105
-                     flex items-center justify-center gap-2"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-            <span>Cancel Cycle</span>
-          </button>
-        )}
-
-        {isEditing && (
-          <button
-            onClick={() => {
-              setIsEditing(false);
-              setFormData({
-                loanId: cycle.loanId._id,
-                cycleCount: cycle.cycleCount,
-                principal: cycle.principal,
-                interestRate: cycle.interestRate,
-                interestAmount: cycle.interestAmount,
-                totalDue: cycle.totalDue,
-                totalPaid: cycle.totalPaid,
-                balance: cycle.balance,
-                profitExpected: cycle.profitExpected,
-                profitEarned: cycle.profitEarned,
-                profitRemaining: cycle.profitRemaining,
-                dateDue: new Date(cycle.dateDue).toISOString().split("T")[0],
-                status: cycle.status,
-              });
-            }}
-            className="w-full sm:w-auto px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 
-                     transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105
-                     flex items-center justify-center gap-2"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-            <span>Cancel</span>
-          </button>
-        )}
       </div>
 
       {/* Form */}
@@ -981,39 +793,11 @@ export default function CycleDetailPage() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        onConfirm={handleDelete}
-        title="Cancel Cycle"
-        message={`Are you sure you want to cancel Cycle #${cycle.cycleCount} for ${cycle.loanId.loanNo}? This action cannot be undone.`}
-        confirmText="Cancel Cycle"
-        cancelText="Keep Cycle"
-        requireReason={true}
-        isLoading={loading}
-      />
-
-      {/* Activate Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showActivateModal}
-        onClose={() => setShowActivateModal(false)}
-        onConfirm={handleActivate}
-        title="Activate Cycle"
-        message={`Are you sure you want to activate Cycle #${cycle.cycleCount} for ${cycle.loanId.loanNo}?`}
-        confirmText="Activate"
-        cancelText="Cancel"
-        requireReason={false}
-        isLoading={loading}
-      />
-
-      {/* Loading Modal */}
       <LoadingModal
         isOpen={showLoadingModal}
         message="Processing your request..."
       />
 
-      {/* Error Modal */}
       <ErrorModal
         isOpen={errorModal.isOpen}
         onClose={() => setErrorModal({ isOpen: false, message: "" })}

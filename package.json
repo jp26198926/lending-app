@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:cycle-index": "tsx scripts/update-cycle-index.ts",
+    "migrate:cycle-persistent": "tsx scripts/revert-cycle-index.ts",
+    "migrate:cycle-cleanup": "tsx scripts/cleanup-cycle-duplicates.ts"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -25,9 +28,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

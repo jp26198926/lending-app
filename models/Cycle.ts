@@ -130,6 +130,8 @@ const CycleSchema = new Schema<ICycle>(
 );
 
 // Indexes for better query performance
+// Full unique index: Cycle counts are persistent and never reused (even after deletion)
+// This ensures sequential cycle numbering per loan
 CycleSchema.index({ loanId: 1, cycleCount: 1 }, { unique: true });
 CycleSchema.index({ status: 1 });
 CycleSchema.index({ loanId: 1, status: 1 });
