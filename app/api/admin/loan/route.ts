@@ -1,12 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
-import Loan, { LoanStatus } from "@/models/Loan";
+import Loan, { LoanStatus, LoanTerms } from "@/models/Loan";
+import Cycle, { CycleStatus } from "@/models/Cycle";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Client";
 import "@/models/User";
 
 const PAGE_PATH = "/admin/loan";
+
+// Calculate due date based on loan terms
+function calculateDueDate(dateStarted: Date, terms: LoanTerms): Date {
+  const dueDate = new Date(dateStarted);
+
+  switch (terms) {
+    case LoanTerms.WEEKLY:
+      dueDate.setDate(dueDate.getDate() + 7);
+      break;
+    case LoanTerms.FORTNIGHTLY:
+      dueDate.setDate(dueDate.getDate() + 14);
+      break;
+    case LoanTerms.MONTHLY:
+      dueDate.setMonth(dueDate.getMonth() + 1);
+      break;
+    default:
+      // Default to 30 days if terms not recognized
+      dueDate.setDate(dueDate.getDate() + 30);
+  }
+
+  return dueDate;
+}
 
 // Generate unique loan number
 async function generateLoanNo(
@@ -189,6 +212,43 @@ export async function POST(request: NextRequest) {
 
     console.log(
       `Loan created successfully with ID: ${loan[0]._id}, loanNo: ${loan[0].loanNo}`,
+    );
+
+    // ===== AUTO-CREATE FIRST CYCLE =====
+    // Calculate first cycle details
+    const interestAmount = (principal * interestRate) / 100;
+    const totalDue = principal + interestAmount;
+    const dateDue = calculateDueDate(new Date(dateStarted), terms);
+
+    console.log(
+      `Creating first cycle for loan ${loan[0].loanNo}: principal=${principal}, interestRate=${interestRate}, interestAmount=${interestAmount}, totalDue=${totalDue}, dateDue=${dateDue}`,
+    );
+
+    // Create first cycle
+    const firstCycle = await Cycle.create(
+      [
+        {
+          loanId: loan[0]._id,
+          cycleCount: 1,
+          principal: principal,
+          interestRate: interestRate,
+          interestAmount: interestAmount,
+          totalDue: totalDue,
+          totalPaid: 0,
+          balance: totalDue,
+          profitExpected: interestAmount,
+          profitEarned: 0,
+          profitRemaining: interestAmount,
+          dateDue: dateDue,
+          createdBy: user._id,
+          status: CycleStatus.ACTIVE,
+        },
+      ],
+      { session },
+    );
+
+    console.log(
+      `First cycle created successfully with ID: ${firstCycle[0]._id}, cycleCount: ${firstCycle[0].cycleCount}`,
     );
 
     // Populate references for response

@@ -8,10 +8,13 @@ import {
   CalendarIcon,
   ArrowLeftIcon,
   ClockIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { LoadingSpinner, StatusBadge } from "@/components/CRUDComponents";
 import PageNotFound from "@/components/PageNotFound";
 import ErrorModal from "@/components/ErrorModal";
+import Modal from "@/components/Modal";
+import DataTable, { Column } from "@/components/DataTable";
 
 interface Client {
   _id: string;
@@ -49,6 +52,25 @@ interface Loan {
   deletedReason?: string;
 }
 
+interface Cycle {
+  _id: string;
+  loanId: string;
+  cycleCount: number;
+  principal: number;
+  interestRate: number;
+  interestAmount: number;
+  totalDue: number;
+  totalPaid: number;
+  balance: number;
+  profitExpected: number;
+  profitEarned: number;
+  profitRemaining: number;
+  dateDue: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function LoanDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -57,6 +79,9 @@ export default function LoanDetailPage() {
   const { loading: pageLoading, accessDenied } = usePageAccess();
   const [loan, setLoan] = useState<Loan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showCycleModal, setShowCycleModal] = useState(false);
+  const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [cyclesLoading, setCyclesLoading] = useState(false);
   const [errorModal, setErrorModal] = useState({
     isOpen: false,
     message: "",
@@ -113,6 +138,150 @@ export default function LoanDetailPage() {
     return parts.join(" ");
   };
 
+  // Format date to YYYY-MM-DD
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toISOString().split("T")[0];
+  };
+
+  // Format datetime to YYYY-MM-DD HH:MM:SS
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const datePart = date.toISOString().split("T")[0];
+    const timePart = date.toTimeString().split(" ")[0];
+    return `${datePart} ${timePart}`;
+  };
+
+  const fetchCycles = async () => {
+    setCyclesLoading(true);
+    try {
+      const res = await fetch(`/api/admin/cycle?loanId=${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCycles(data);
+        setShowCycleModal(true);
+      } else {
+        setErrorModal({
+          isOpen: true,
+          message: "Failed to fetch cycles. Please try again.",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching cycles:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "Failed to fetch cycles. Please try again.",
+      });
+    } finally {
+      setCyclesLoading(false);
+    }
+  };
+
+  const cycleColumns: Column<Cycle>[] = [
+    {
+      key: "cycleCount",
+      label: "Cycle #",
+      sortable: true,
+      searchable: true,
+      render: (cycle) => (
+        <span className="font-semibold text-zentyal-primary">
+          Cycle {cycle.cycleCount}
+        </span>
+      ),
+    },
+    {
+      key: "principal",
+      label: "Principal",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => (
+        <span className="font-medium">
+          {cycle.principal.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      key: "interestRate",
+      label: "Interest Rate",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => <span>{cycle.interestRate.toFixed(2)}%</span>,
+    },
+    {
+      key: "interestAmount",
+      label: "Interest Amount",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => (
+        <span>
+          {cycle.interestAmount.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      key: "totalDue",
+      label: "Total Due",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => (
+        <span className="font-semibold text-gray-900">
+          {cycle.totalDue.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      key: "totalPaid",
+      label: "Total Paid",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => (
+        <span className="text-green-600">
+          {cycle.totalPaid.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      key: "balance",
+      label: "Balance",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => (
+        <span className="font-semibold text-red-600">
+          {cycle.balance.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </span>
+      ),
+    },
+    {
+      key: "dateDue",
+      label: "Due Date",
+      sortable: true,
+      searchable: false,
+      render: (cycle) => <span>{formatDate(cycle.dateDue)}</span>,
+    },
+    {
+      key: "status",
+      label: "Status",
+      sortable: true,
+      searchable: true,
+      render: (cycle) => <StatusBadge status={cycle.status} />,
+    },
+  ];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -139,12 +308,55 @@ export default function LoanDetailPage() {
             <p className="text-gray-600 mt-1">View loan information</p>
           </div>
           {loan && (
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <StatusBadge status={loan.status} />
+              <button
+                onClick={fetchCycles}
+                disabled={cyclesLoading}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {cyclesLoading ? (
+                  <>
+                    <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                    <span className="hidden sm:inline">Loading...</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowPathIcon className="w-5 h-5" />
+                    <span className="hidden sm:inline">Show Loan Cycles</span>
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Cycles Modal */}
+      <Modal
+        isOpen={showCycleModal}
+        onClose={() => setShowCycleModal(false)}
+        title={`Loan Cycles - ${loan?.loanNo || ""}`}
+        size="2xl"
+      >
+        <div className="p-1">
+          {cycles.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-gray-500">No cycles found for this loan.</p>
+            </div>
+          ) : (
+            <DataTable
+              data={cycles}
+              columns={cycleColumns}
+              itemsPerPage={10}
+              loading={cyclesLoading}
+              emptyMessage="No cycles found"
+              exportFileName={`loan-cycles-${loan?.loanNo || "export"}`}
+              searchPlaceholder="Search cycles..."
+            />
+          )}
+        </div>
+      </Modal>
 
       {/* Loan Information */}
       {loan && (
@@ -204,7 +416,7 @@ export default function LoanDetailPage() {
                 <p className="text-sm text-gray-500 mb-1">Date Started</p>
                 <p className="text-base font-semibold text-gray-900 flex items-center">
                   <CalendarIcon className="w-5 h-5 mr-2 text-gray-400" />
-                  {new Date(loan.dateStarted).toLocaleDateString()}
+                  {formatDate(loan.dateStarted)}
                 </p>
               </div>
             </div>
@@ -220,7 +432,7 @@ export default function LoanDetailPage() {
               <div>
                 <p className="text-sm text-gray-500 mb-1">Created At</p>
                 <p className="text-base text-gray-900">
-                  {new Date(loan.createdAt).toLocaleString()}
+                  {formatDateTime(loan.createdAt)}
                 </p>
                 {loan.createdBy && (
                   <p className="text-sm text-gray-600">
@@ -231,7 +443,7 @@ export default function LoanDetailPage() {
               <div>
                 <p className="text-sm text-gray-500 mb-1">Last Updated</p>
                 <p className="text-base text-gray-900">
-                  {new Date(loan.updatedAt).toLocaleString()}
+                  {formatDateTime(loan.updatedAt)}
                 </p>
                 {loan.updatedBy && (
                   <p className="text-sm text-gray-600">
@@ -244,7 +456,7 @@ export default function LoanDetailPage() {
                   <div>
                     <p className="text-sm text-gray-500 mb-1">Cancelled At</p>
                     <p className="text-base text-gray-900">
-                      {new Date(loan.deletedAt).toLocaleString()}
+                      {formatDateTime(loan.deletedAt)}
                     </p>
                     {loan.deletedBy && (
                       <p className="text-sm text-gray-600">
