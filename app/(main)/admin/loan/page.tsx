@@ -54,8 +54,8 @@ export default function LoanPage() {
     _id: "",
     clientId: "",
     principal: 0,
-    interestRate: 0,
-    terms: "Weekly",
+    interestRate: 30,
+    terms: "Fortnightly",
     dateStarted: new Date().toISOString().split("T")[0],
     assignedStaff: "",
     status: "Active",
@@ -319,8 +319,8 @@ export default function LoanPage() {
       _id: "",
       clientId: "",
       principal: 0,
-      interestRate: 0,
-      terms: "Weekly",
+      interestRate: 30,
+      terms: "Fortnightly",
       dateStarted: new Date().toISOString().split("T")[0],
       assignedStaff: "",
       status: "Active",
@@ -665,7 +665,7 @@ export default function LoanPage() {
             {/* Principal */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Principal Amount () <span className="text-red-500">*</span>
+                Principal Amount <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -765,25 +765,6 @@ export default function LoanPage() {
                     {user.firstName} {user.lastName}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) =>
-                  setFormData({ ...formData, status: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-              >
-                <option value="Active">Active</option>
-                <option value="Completed">Completed</option>
-                <option value="Cancelled">Cancelled</option>
               </select>
             </div>
           </div>
