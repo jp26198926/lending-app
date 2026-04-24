@@ -3,6 +3,12 @@ import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Loan, { LoanStatus, LoanTerms } from "@/models/Loan";
 import Cycle, { CycleStatus } from "@/models/Cycle";
+import Ledger, {
+  LedgerType,
+  LedgerDirection,
+  LedgerStatus,
+} from "@/models/Ledger";
+import Settings from "@/models/Settings";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Client";
 import "@/models/User";
@@ -188,10 +194,42 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
+    // ===== STEP 1: CHECK CASH ON HAND =====
+    // Fetch Settings document
+    const settings = await Settings.findOne().session(session);
+
+    if (!settings) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error:
+            "Settings not found. Please configure application settings first.",
+        },
+        { status: 404 },
+      );
+    }
+
+    // Validate if loan amount exceeds available cash
+    if (principal > settings.cashOnHand) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error: `Insufficient cash on hand. Available: ₱${settings.cashOnHand.toLocaleString()}, Required: ₱${principal.toLocaleString()}`,
+        },
+        { status: 400 },
+      );
+    }
+
+    console.log(
+      `Cash validation passed: Available ₱${settings.cashOnHand}, Loan ₱${principal}`,
+    );
+
+    // ===== STEP 2: GENERATE LOAN NUMBER =====
     // Auto-generate unique loan number within transaction
     const loanNo = await generateLoanNo(session);
     console.log(`Creating loan with loanNo: ${loanNo}`);
 
+    // ===== STEP 3: CREATE LOAN RECORD =====
     // Create loan
     const loan = await Loan.create(
       [
@@ -214,7 +252,7 @@ export async function POST(request: NextRequest) {
       `Loan created successfully with ID: ${loan[0]._id}, loanNo: ${loan[0].loanNo}`,
     );
 
-    // ===== AUTO-CREATE FIRST CYCLE =====
+    // ===== STEP 4: AUTO-CREATE FIRST CYCLE =====
     // Calculate first cycle details
     const interestAmount = (principal * interestRate) / 100;
     const totalDue = principal + interestAmount;
@@ -251,6 +289,50 @@ export async function POST(request: NextRequest) {
       `First cycle created successfully with ID: ${firstCycle[0]._id}, cycleCount: ${firstCycle[0].cycleCount}`,
     );
 
+    // ===== STEP 5: CREATE LEDGER ENTRY (LOAN RELEASE - OUT) =====
+    const ledgerDate = new Date(dateStarted);
+    const ledgerDescription = `Loan released to ${loan[0].clientId} - ${loan[0].loanNo}`;
+
+    await Ledger.create(
+      [
+        {
+          date: ledgerDate,
+          type: LedgerType.LOAN_RELEASE,
+          direction: LedgerDirection.OUT,
+          amount: principal,
+          loanId: loan[0]._id,
+          description: ledgerDescription,
+          createdBy: user._id,
+          status: LedgerStatus.COMPLETED,
+        },
+      ],
+      { session },
+    );
+
+    console.log(
+      `Ledger entry created: LOAN_RELEASE, OUT, Amount: ₱${principal}`,
+    );
+
+    // ===== STEP 6: DEDUCT CASH ON HAND =====
+    await Settings.findByIdAndUpdate(
+      settings._id,
+      {
+        $inc: {
+          cashOnHand: -principal, // Deduct loan amount
+        },
+        $set: {
+          updatedBy: user._id,
+          updatedAt: new Date(),
+        },
+      },
+      { session },
+    );
+
+    console.log(
+      `Cash on hand updated: ₱${settings.cashOnHand} - ₱${principal} = ₱${settings.cashOnHand - principal}`,
+    );
+
+    // ===== STEP 7: POPULATE REFERENCES FOR RESPONSE =====
     // Populate references for response
     await loan[0].populate(
       "clientId",

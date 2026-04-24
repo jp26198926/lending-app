@@ -518,11 +518,11 @@ export default function LoanPage() {
             sortable: true,
             render: (loan: Loan) => (
               <span className="text-sm text-gray-600">
-                {new Date(loan.dateStarted).toLocaleDateString()}
+                {new Date(loan.dateStarted).toISOString().split("T")[0]}
               </span>
             ),
             exportValue: (loan: Loan) =>
-              new Date(loan.dateStarted).toLocaleDateString(),
+              new Date(loan.dateStarted).toISOString().split("T")[0],
           },
           {
             key: "assignedStaff",

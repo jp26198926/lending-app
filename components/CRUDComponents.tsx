@@ -187,7 +187,9 @@ export function LoadingSpinner() {
 
 // Status Badge Component
 export function StatusBadge({ status }: { status: string }) {
-  const isActive = status.toLocaleUpperCase() === "ACTIVE";
+  // const isActive = status.toLocaleUpperCase() === "ACTIVE";
+  const isActive = ["ACTIVE", "COMPLETED"].includes(status.toUpperCase());
+
   return (
     <span
       className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full
