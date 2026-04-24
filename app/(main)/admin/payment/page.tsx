@@ -78,7 +78,6 @@ export default function PaymentPage() {
     amount: 0,
     datePaid: new Date().toISOString().split("T")[0],
     remarks: "",
-    status: "Completed",
   });
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -196,6 +195,16 @@ export default function PaymentPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate amount does not exceed balance
+    if (isAmountExceedingBalance()) {
+      setErrorModal({
+        isOpen: true,
+        message: "Payment amount cannot exceed the total amount due (balance).",
+      });
+      return;
+    }
+
     setLoading(true);
     setShowLoadingModal(true);
 
@@ -207,6 +216,7 @@ export default function PaymentPage() {
 
       const payload = {
         ...formData,
+        status: "Completed",
         [isEditing ? "updatedBy" : "createdBy"]: currentUser?._id,
       };
 
@@ -255,7 +265,6 @@ export default function PaymentPage() {
       amount: payment.amount,
       datePaid: new Date(payment.datePaid).toISOString().split("T")[0],
       remarks: payment.remarks || "",
-      status: payment.status,
     });
     setIsEditing(true);
     setShowFormModal(true);
@@ -316,7 +325,6 @@ export default function PaymentPage() {
       amount: 0,
       datePaid: new Date().toISOString().split("T")[0],
       remarks: "",
-      status: "Completed",
     });
     setIsEditing(false);
   };
@@ -326,6 +334,26 @@ export default function PaymentPage() {
     if (client.middleName) parts.push(client.middleName);
     parts.push(client.lastName);
     return parts.join(" ");
+  };
+
+  // Get selected cycle data for displaying total due
+  const getSelectedCycle = () => {
+    if (!formData.cycleId) return null;
+    return cycles.find((cycle) => cycle._id === formData.cycleId);
+  };
+
+  // Calculate new balance after payment
+  const calculateNewBalance = () => {
+    const selectedCycle = getSelectedCycle();
+    if (!selectedCycle || !formData.amount) return null;
+    return selectedCycle.balance - formData.amount;
+  };
+
+  // Check if amount exceeds balance
+  const isAmountExceedingBalance = () => {
+    const selectedCycle = getSelectedCycle();
+    if (!selectedCycle || !formData.amount) return false;
+    return formData.amount > selectedCycle.balance;
   };
 
   const getStatusBadge = (status: string) => {
@@ -700,10 +728,30 @@ export default function PaymentPage() {
                     amount: parseFloat(e.target.value) || 0,
                   })
                 }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
+                className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 
+                         focus:ring-zentyal-primary focus:border-transparent transition-all ${
+                           isAmountExceedingBalance()
+                             ? "border-red-500 bg-red-50"
+                             : "border-gray-300"
+                         }`}
                 required
               />
+              {isAmountExceedingBalance() && (
+                <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                  <svg
+                    className="w-4 h-4"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Amount exceeds the total amount due
+                </p>
+              )}
             </div>
 
             <div>
@@ -722,22 +770,60 @@ export default function PaymentPage() {
               />
             </div>
 
+            {/* Total Amount Due Display */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status <span className="text-red-500">*</span>
+                Total Amount Due
               </label>
-              <select
-                value={formData.status}
-                onChange={(e) =>
-                  setFormData({ ...formData, status: e.target.value })
-                }
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 
-                         focus:ring-zentyal-primary focus:border-transparent transition-all"
-                required
+              <div className="w-full px-4 py-2.5 bg-gray-100 border border-gray-300 rounded-lg">
+                {formData.cycleId && getSelectedCycle() ? (
+                  <span className="text-lg font-bold text-zentyal-primary">
+                    {getSelectedCycle()!.balance.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                ) : (
+                  <span className="text-gray-400">Select a cycle first</span>
+                )}
+              </div>
+            </div>
+
+            {/* New Balance Display */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                New Balance (After Payment)
+              </label>
+              <div
+                className={`w-full px-4 py-2.5 border rounded-lg ${
+                  calculateNewBalance() !== null
+                    ? isAmountExceedingBalance()
+                      ? "bg-red-50 border-red-300"
+                      : "bg-green-50 border-green-300"
+                    : "bg-gray-100 border-gray-300"
+                }`}
               >
-                <option value="Completed">Completed</option>
-                <option value="Cancelled">Cancelled</option>
-              </select>
+                {formData.cycleId && formData.amount > 0 ? (
+                  <span
+                    className={`text-lg font-bold ${
+                      isAmountExceedingBalance()
+                        ? "text-red-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {calculateNewBalance()!.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                ) : (
+                  <span className="text-gray-400">
+                    {formData.cycleId
+                      ? "Enter payment amount"
+                      : "Select a cycle first"}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="md:col-span-2">
