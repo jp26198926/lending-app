@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
           type,
           userId,
           loanId: loanId || undefined,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: status || UserLedgerStatus.COMPLETED,
         },
       ],

@@ -155,7 +155,7 @@ export async function PUT(
     if (profitRemaining !== undefined) cycle.profitRemaining = profitRemaining;
     if (dateDue) cycle.dateDue = dateDue;
     if (status) cycle.status = status;
-    cycle.updatedBy = user._id;
+    cycle.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     cycle.updatedAt = new Date();
 
     await cycle.save({ session });
@@ -257,7 +257,7 @@ export async function DELETE(
     // Soft delete
     cycle.status = CycleStatus.CANCELLED;
     cycle.deletedAt = new Date();
-    cycle.deletedBy = user._id;
+    cycle.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     cycle.deletedReason = reason;
 
     await cycle.save({ session });
@@ -343,7 +343,7 @@ export async function PATCH(
     cycle.deletedAt = undefined;
     cycle.deletedBy = undefined;
     cycle.deletedReason = undefined;
-    cycle.updatedBy = user._id;
+    cycle.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     cycle.updatedAt = new Date();
 
     await cycle.save({ session });

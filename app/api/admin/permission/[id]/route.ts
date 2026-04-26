@@ -156,7 +156,7 @@ export async function DELETE(
 
     existingPermission.status = PermissionStatus.DELETED;
     existingPermission.deletedAt = new Date();
-    existingPermission.deletedBy = user._id;
+    existingPermission.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     existingPermission.deletedReason = reason;
 
     await existingPermission.save({ session });

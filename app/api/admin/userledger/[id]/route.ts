@@ -112,7 +112,7 @@ export async function PUT(
     if (userId) userLedger.userId = userId;
     if (loanId !== undefined) userLedger.loanId = loanId || undefined;
     if (status) userLedger.status = status;
-    userLedger.updatedBy = user._id;
+    userLedger.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     userLedger.updatedAt = new Date();
 
     await userLedger.save({ session });
@@ -213,7 +213,7 @@ export async function DELETE(
     // Soft delete (cancel)
     userLedger.status = UserLedgerStatus.CANCELLED;
     userLedger.deletedAt = new Date();
-    userLedger.deletedBy = user._id;
+    userLedger.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     userLedger.deletedReason = reason;
 
     await userLedger.save({ session });

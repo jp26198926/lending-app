@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
           phone: phone.trim(),
           email: email.toLowerCase().trim(),
           address: address.trim(),
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: ClientStatus.ACTIVE,
         },
       ],

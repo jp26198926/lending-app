@@ -118,7 +118,7 @@ export async function PUT(
     if (profitEarned !== undefined) existingUser.profitEarned = profitEarned;
     if (totalWithdrawn !== undefined)
       existingUser.totalWithdrawn = totalWithdrawn;
-    existingUser.updatedBy = user._id;
+    existingUser.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingUser.updatedAt = new Date();
     if (status) existingUser.status = status;
 
@@ -188,7 +188,7 @@ export async function DELETE(
     // Soft delete
     existingUser.status = UserStatus.DELETED;
     existingUser.deletedAt = new Date();
-    existingUser.deletedBy = user._id;
+    existingUser.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     existingUser.deletedReason = reason;
 
     await existingUser.save({ session });
@@ -250,7 +250,7 @@ export async function PATCH(
     existingUser.deletedAt = null;
     existingUser.deletedBy = null;
     existingUser.deletedReason = null;
-    existingUser.updatedBy = user._id;
+    existingUser.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingUser.updatedAt = new Date();
 
     await existingUser.save({ session });

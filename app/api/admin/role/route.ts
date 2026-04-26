@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       [
         {
           role: body.role,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: RoleStatus.ACTIVE,
         },
       ],

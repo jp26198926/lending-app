@@ -96,7 +96,7 @@ export async function PUT(
     if (phone) client.phone = phone.trim();
     if (email) client.email = email.toLowerCase().trim();
     if (address) client.address = address.trim();
-    client.updatedBy = user._id;
+    client.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     client.updatedAt = new Date();
 
     await client.save({ session });
@@ -163,7 +163,7 @@ export async function DELETE(
     // Soft delete
     client.status = ClientStatus.DELETED;
     client.deletedAt = new Date();
-    client.deletedBy = user._id;
+    client.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     client.deletedReason = reason;
 
     await client.save({ session });
@@ -223,7 +223,7 @@ export async function PATCH(
     client.deletedAt = null;
     client.deletedBy = null;
     client.deletedReason = null;
-    client.updatedBy = user._id;
+    client.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     client.updatedAt = new Date();
 
     await client.save({ session });

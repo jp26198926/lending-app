@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
           cycleId: cycleId || undefined,
           paymentId: paymentId || undefined,
           description,
-          createdBy: user!.userId,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: status || LedgerStatus.COMPLETED,
         },
       ],
@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
       {
         $set: {
           cashOnHand: newCashOnHand,
-          updatedBy: user!.userId,
+          updatedBy: new mongoose.Types.ObjectId(user!.userId),
           updatedAt: new Date(),
         },
       },
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
               capitalContribution: amount,
             },
             $set: {
-              updatedBy: user!.userId,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
               type: UserLedgerType.CAPITAL_IN,
               userId,
               loanId: loanId || undefined,
-              createdBy: user!.userId,
+              createdBy: new mongoose.Types.ObjectId(user!.userId),
               status: UserLedgerStatus.COMPLETED,
             },
           ],

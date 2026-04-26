@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
         phone: "",
         email: "",
         cashOnHand: 0,
-        createdBy: user._id,
-        updatedBy: user._id,
+        createdBy: new mongoose.Types.ObjectId(user!.userId),
+        updatedBy: new mongoose.Types.ObjectId(user!.userId),
       });
 
       await settings.populate("createdBy", "firstName lastName email");
@@ -92,8 +92,8 @@ export async function PUT(request: NextRequest) {
             phone,
             email,
             cashOnHand: cashOnHand || 0,
-            createdBy: user._id,
-            updatedBy: user._id,
+            createdBy: new mongoose.Types.ObjectId(user!.userId),
+            updatedBy: new mongoose.Types.ObjectId(user!.userId),
           },
         ],
         { session },
@@ -111,7 +111,7 @@ export async function PUT(request: NextRequest) {
     settings.phone = phone;
     settings.email = email;
     if (cashOnHand !== undefined) settings.cashOnHand = cashOnHand;
-    settings.updatedBy = user._id;
+    settings.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     settings.updatedAt = new Date();
 
     await settings.save({ session });

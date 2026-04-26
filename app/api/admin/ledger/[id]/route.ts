@@ -139,7 +139,7 @@ export async function PUT(
     if (paymentId !== undefined) ledger.paymentId = paymentId;
     if (description !== undefined) ledger.description = description;
     if (status) ledger.status = status;
-    ledger.updatedBy = user!.userId;
+    ledger.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     ledger.updatedAt = new Date();
 
     await ledger.save({ session });
@@ -245,7 +245,7 @@ export async function DELETE(
     // Soft delete (cancel)
     ledger.status = LedgerStatus.CANCELLED;
     ledger.deletedAt = new Date();
-    ledger.deletedBy = user!.userId;
+    ledger.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     ledger.deletedReason = reason;
 
     await ledger.save({ session });
@@ -282,7 +282,7 @@ export async function DELETE(
         {
           $set: {
             cashOnHand: newCashOnHand,
-            updatedBy: user!.userId,
+            updatedBy: new mongoose.Types.ObjectId(user!.userId),
             updatedAt: new Date(),
           },
         },
@@ -321,7 +321,7 @@ export async function DELETE(
               capitalContribution: -ledger.amount,
             },
             $set: {
-              updatedBy: user!.userId,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -343,7 +343,7 @@ export async function DELETE(
         if (userLedgerEntry) {
           userLedgerEntry.status = UserLedgerStatus.CANCELLED;
           userLedgerEntry.deletedAt = new Date();
-          userLedgerEntry.deletedBy = user!.userId;
+          userLedgerEntry.deletedBy = new mongoose.Types.ObjectId(user!.userId);
           userLedgerEntry.deletedReason = reason;
           await userLedgerEntry.save({ session });
         }

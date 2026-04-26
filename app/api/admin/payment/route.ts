@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           amount,
           datePaid,
           remarks,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: status || PaymentStatus.COMPLETED,
         },
       ],
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
           profitEarned: newProfitEarned,
           profitRemaining: Math.max(0, newProfitRemaining),
           status: newStatus,
-          updatedBy: user._id,
+          updatedBy: new mongoose.Types.ObjectId(user!.userId),
           updatedAt: new Date(),
         },
       },
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
           description:
             remarks || `Payment ${paymentNo} for Cycle #${cycle.cycleCount}`,
           status: LedgerStatus.COMPLETED,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
         },
       ],
       { session },
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
           cashOnHand: amount, // Add payment amount to cash on hand
         },
         $set: {
-          updatedBy: user._id,
+          updatedBy: new mongoose.Types.ObjectId(user!.userId),
           updatedAt: new Date(),
         },
       },
@@ -266,7 +266,7 @@ export async function POST(request: NextRequest) {
           {
             $set: {
               status: LoanStatus.COMPLETED,
-              updatedBy: user._id,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -348,7 +348,7 @@ export async function POST(request: NextRequest) {
                 userId: assignedStaff._id,
                 loanId: loanId,
                 status: UserLedgerStatus.COMPLETED,
-                createdBy: user._id,
+                createdBy: new mongoose.Types.ObjectId(user!.userId),
               },
             ],
             { session },
@@ -363,7 +363,7 @@ export async function POST(request: NextRequest) {
                 cashWithdrawable: staffProfit,
               },
               $set: {
-                updatedBy: user._id,
+                updatedBy: new mongoose.Types.ObjectId(user!.userId),
                 updatedAt: new Date(),
               },
             },
@@ -387,7 +387,7 @@ export async function POST(request: NextRequest) {
                 userId: adminUser._id,
                 loanId: loanId,
                 status: UserLedgerStatus.COMPLETED,
-                createdBy: user._id,
+                createdBy: new mongoose.Types.ObjectId(user!.userId),
               },
             ],
             { session },
@@ -402,7 +402,7 @@ export async function POST(request: NextRequest) {
                 cashWithdrawable: adminProfit,
               },
               $set: {
-                updatedBy: user._id,
+                updatedBy: new mongoose.Types.ObjectId(user!.userId),
                 updatedAt: new Date(),
               },
             },

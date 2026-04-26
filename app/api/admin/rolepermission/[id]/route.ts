@@ -101,7 +101,7 @@ export async function PUT(
     if (body.roleId) existingAssignment.roleId = body.roleId;
     if (body.pageId) existingAssignment.pageId = body.pageId;
     if (body.permissionId) existingAssignment.permissionId = body.permissionId;
-    existingAssignment.updatedBy = user._id;
+    existingAssignment.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingAssignment.updatedAt = new Date();
 
     await existingAssignment.save({ session });
@@ -172,7 +172,7 @@ export async function DELETE(
 
     existingAssignment.status = RolePermissionStatus.DELETED;
     existingAssignment.deletedAt = new Date();
-    existingAssignment.deletedBy = user._id;
+    existingAssignment.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     existingAssignment.deletedReason = reason;
 
     await existingAssignment.save({ session });
@@ -235,7 +235,7 @@ export async function PATCH(
     existingAssignment.deletedAt = null;
     existingAssignment.deletedBy = null;
     existingAssignment.deletedReason = null;
-    existingAssignment.updatedBy = user._id;
+    existingAssignment.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingAssignment.updatedAt = new Date();
 
     await existingAssignment.save({ session });

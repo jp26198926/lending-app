@@ -71,7 +71,7 @@ export async function POST(
 
     // Update password
     user.password = newPassword;
-    user.updatedBy = authResult.user._id;
+    user.updatedBy = new mongoose.Types.ObjectId(authResult.user!.userId);
     user.updatedAt = new Date();
 
     await user.save({ session });

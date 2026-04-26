@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
           profitEarned,
           profitRemaining,
           dateDue,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: status || CycleStatus.ACTIVE,
         },
       ],

@@ -117,7 +117,7 @@ export async function PUT(
     if (dateStarted) loan.dateStarted = dateStarted;
     if (assignedStaff) loan.assignedStaff = assignedStaff;
     if (status) loan.status = status;
-    loan.updatedBy = user._id;
+    loan.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     loan.updatedAt = new Date();
 
     await loan.save({ session });
@@ -230,7 +230,7 @@ export async function DELETE(
     // Soft delete
     loan.status = LoanStatus.CANCELLED;
     loan.deletedAt = new Date();
-    loan.deletedBy = user._id;
+    loan.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     loan.deletedReason = reason;
 
     await loan.save({ session });
@@ -292,7 +292,7 @@ export async function PATCH(
     loan.deletedAt = undefined;
     loan.deletedBy = undefined;
     loan.deletedReason = undefined;
-    loan.updatedBy = user._id;
+    loan.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     loan.updatedAt = new Date();
 
     await loan.save({ session });

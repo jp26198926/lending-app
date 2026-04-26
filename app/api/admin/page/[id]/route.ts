@@ -118,7 +118,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Check authentication and permission
-  const { error } = await withAuth(request, PAGE_PATH);
+  const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
   const session = await mongoose.startSession();
@@ -127,6 +127,16 @@ export async function DELETE(
     await session.startTransaction();
 
     const { id } = await params;
+    const body = await request.json();
+    const { reason } = body;
+
+    if (!reason || reason.trim() === "") {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Deletion reason is required" },
+        { status: 400 },
+      );
+    }
 
     await dbConnect();
 
@@ -139,8 +149,10 @@ export async function DELETE(
 
     existingPage.status = PageStatus.DELETED;
     existingPage.deletedAt = new Date();
-    existingPage.deletedBy = user._id;
+    existingPage.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     existingPage.deletedReason = reason;
+
+    await existingPage.save({ session });
 
     await session.commitTransaction();
 
@@ -166,7 +178,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   // Check authentication and permission (using Edit permission)
-  const { error } = await withAuth(request, PAGE_PATH, "Edit");
+  const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
   const session = await mongoose.startSession();
@@ -189,8 +201,12 @@ export async function PATCH(
     existingPage.deletedAt = null;
     existingPage.deletedBy = null;
     existingPage.deletedReason = null;
-    existingPage.updatedBy = user._id;
+    existingPage.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingPage.updatedAt = new Date();
+
+    await existingPage.save({ session });
+
+    await session.commitTransaction();
 
     return NextResponse.json(existingPage);
   } catch (err: unknown) {

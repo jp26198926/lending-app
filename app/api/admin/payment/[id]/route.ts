@@ -144,7 +144,7 @@ export async function PUT(
               profitEarned: Math.max(0, reversedProfitEarned),
               profitRemaining: Math.max(0, reversedProfitRemaining),
               status: oldCycleNewStatus,
-              updatedBy: user._id,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -189,7 +189,7 @@ export async function PUT(
             profitEarned: updatedProfitEarned,
             profitRemaining: Math.max(0, updatedProfitRemaining),
             status: updatedStatus,
-            updatedBy: user._id,
+            updatedBy: new mongoose.Types.ObjectId(user!.userId),
             updatedAt: new Date(),
           },
         },
@@ -211,7 +211,7 @@ export async function PUT(
               loanId: loanId || payment.loanId,
               cycleId: newCycleId,
               description: remarks || ledger.description,
-              updatedBy: user._id,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -243,7 +243,7 @@ export async function PUT(
             {
               $set: {
                 status: LoanStatus.COMPLETED,
-                updatedBy: user._id,
+                updatedBy: new mongoose.Types.ObjectId(user!.userId),
                 updatedAt: new Date(),
               },
             },
@@ -259,7 +259,7 @@ export async function PUT(
             {
               $set: {
                 status: LoanStatus.ACTIVE,
-                updatedBy: user._id,
+                updatedBy: new mongoose.Types.ObjectId(user!.userId),
                 updatedAt: new Date(),
               },
             },
@@ -292,7 +292,7 @@ export async function PUT(
               cashOnHand: cashDifference, // Adjust by difference
             },
             $set: {
-              updatedBy: user._id,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -310,7 +310,7 @@ export async function PUT(
     if (datePaid) payment.datePaid = datePaid;
     if (remarks !== undefined) payment.remarks = remarks;
     if (status) payment.status = status;
-    payment.updatedBy = user._id;
+    payment.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     payment.updatedAt = new Date();
 
     await payment.save({ session });
@@ -442,7 +442,7 @@ export async function DELETE(
             profitEarned: Math.max(0, reversedProfitEarned),
             profitRemaining: Math.max(0, reversedProfitRemaining),
             status: newCycleStatus,
-            updatedBy: user._id,
+            updatedBy: new mongoose.Types.ObjectId(user!.userId),
             updatedAt: new Date(),
           },
         },
@@ -461,10 +461,10 @@ export async function DELETE(
         {
           $set: {
             status: LedgerStatus.CANCELLED,
-            updatedBy: user._id,
+            updatedBy: new mongoose.Types.ObjectId(user!.userId),
             updatedAt: new Date(),
             deletedAt: new Date(),
-            deletedBy: user._id,
+            deletedBy: new mongoose.Types.ObjectId(user!.userId),
             deletedReason: `Payment cancelled: ${reason}`,
           },
         },
@@ -484,7 +484,7 @@ export async function DELETE(
             paymentId: payment._id,
             description: `Payment ${payment.paymentNo} cancelled - ${reason}`,
             status: LedgerStatus.COMPLETED,
-            createdBy: user._id,
+            createdBy: new mongoose.Types.ObjectId(user!.userId),
           },
         ],
         { session },
@@ -515,7 +515,7 @@ export async function DELETE(
           {
             $set: {
               status: LoanStatus.ACTIVE,
-              updatedBy: user._id,
+              updatedBy: new mongoose.Types.ObjectId(user!.userId),
               updatedAt: new Date(),
             },
           },
@@ -549,7 +549,7 @@ export async function DELETE(
           cashOnHand: -payment.amount, // Subtract cancelled payment amount
         },
         $set: {
-          updatedBy: user._id,
+          updatedBy: new mongoose.Types.ObjectId(user!.userId),
           updatedAt: new Date(),
         },
       },
@@ -561,7 +561,7 @@ export async function DELETE(
     // ============================================================
     payment.status = PaymentStatus.CANCELLED;
     payment.deletedAt = new Date();
-    payment.deletedBy = user._id;
+    payment.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     payment.deletedReason = reason;
 
     await payment.save({ session });

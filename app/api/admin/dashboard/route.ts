@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import { withAuth } from "@/lib/apiAuth";
 import User from "@/models/User";
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
     const cashOnHand = settings?.cashOnHand || 0;
 
     // 2. Get Current User's Withdrawable Cash
-    const currentUserData = await User.findById(user._id).select(
+    const currentUserData = await User.findById(new mongoose.Types.ObjectId(user!.userId)).select(
       "cashWithdrawable",
     );
     const userWithdrawableCash = currentUserData?.cashWithdrawable || 0;
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
 
     // 4. Total Staffs (Active users excluding current user)
     const totalStaffs = await User.countDocuments({
-      _id: { $ne: user._id },
+      _id: { $ne: new mongoose.Types.ObjectId(user!.userId) },
       status: "ACTIVE",
     });
 

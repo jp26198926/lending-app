@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
           capitalContribution: capitalContribution || 0,
           profitEarned: profitEarned || 0,
           totalWithdrawn: totalWithdrawn || 0,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: status || UserStatus.ACTIVE,
         },
       ],

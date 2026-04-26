@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { usePageAccess } from "@/hooks/usePageAccess";
 import { useAuth } from "@/context/AuthContext";
@@ -88,29 +88,7 @@ export default function ClientDetailPage() {
   const canDelete = hasPermission("/admin/client", "Delete");
   const canAdd = hasPermission("/admin/client", "Add");
 
-  useEffect(() => {
-    if (!isNew && id) {
-      fetchClient();
-    }
-  }, [id, isNew]);
-
-  if (pageLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
-  if (accessDenied) {
-    return <PageNotFound />;
-  }
-
-  if (isNew && !canAdd) {
-    return <PageNotFound />;
-  }
-
-  const fetchClient = async () => {
+  const fetchClient = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/admin/client/${id}`);
@@ -142,7 +120,29 @@ export default function ClientDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, router]);
+
+  useEffect(() => {
+    if (!isNew && id) {
+      fetchClient();
+    }
+  }, [id, isNew, fetchClient]);
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return <PageNotFound />;
+  }
+
+  if (isNew && !canAdd) {
+    return <PageNotFound />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,7 +194,9 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleDeleteConfirm = async (reason: string) => {
+  const handleDeleteConfirm = async (reason?: string) => {
+    if (!reason) return;
+    
     setShowDeleteModal(false);
     setShowLoadingModal(true);
 

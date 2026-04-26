@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           roleId: body.roleId,
           pageId: body.pageId,
           permissionId: body.permissionId,
-          createdBy: user._id,
+          createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: RolePermissionStatus.ACTIVE,
         },
       ],

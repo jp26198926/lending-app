@@ -88,7 +88,7 @@ export async function PUT(
     }
 
     existingRole.role = body.role;
-    existingRole.updatedBy = user._id;
+    existingRole.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingRole.updatedAt = new Date();
 
     await existingRole.save({ session });
@@ -148,7 +148,7 @@ export async function DELETE(
 
     existingRole.status = RoleStatus.DELETED;
     existingRole.deletedAt = new Date();
-    existingRole.deletedBy = user._id;
+    existingRole.deletedBy = new mongoose.Types.ObjectId(user!.userId);
     existingRole.deletedReason = reason;
 
     await existingRole.save({ session });
@@ -200,7 +200,7 @@ export async function PATCH(
     existingRole.deletedAt = null;
     existingRole.deletedBy = null;
     existingRole.deletedReason = null;
-    existingRole.updatedBy = user._id;
+    existingRole.updatedBy = new mongoose.Types.ObjectId(user!.userId);
     existingRole.updatedAt = new Date();
 
     await existingRole.save({ session });
