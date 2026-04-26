@@ -5,7 +5,11 @@ import Payment, { PaymentStatus } from "@/models/Payment";
 import Cycle, { CycleStatus } from "@/models/Cycle";
 import Loan, { LoanStatus } from "@/models/Loan";
 import Settings from "@/models/Settings";
-import Ledger, { LedgerStatus } from "@/models/Ledger";
+import Ledger, {
+  LedgerStatus,
+  LedgerType,
+  LedgerDirection,
+} from "@/models/Ledger";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/User";
 
@@ -464,6 +468,25 @@ export async function DELETE(
             deletedReason: `Payment cancelled: ${reason}`,
           },
         },
+        { session },
+      );
+
+      // Create a new ledger entry to record the cancellation/reversal
+      await Ledger.create(
+        [
+          {
+            date: new Date(),
+            type: LedgerType.REPAYMENT,
+            direction: LedgerDirection.OUT,
+            amount: payment.amount,
+            loanId: payment.loanId,
+            cycleId: payment.cycleId,
+            paymentId: payment._id,
+            description: `Payment ${payment.paymentNo} cancelled - ${reason}`,
+            status: LedgerStatus.COMPLETED,
+            createdBy: user._id,
+          },
+        ],
         { session },
       );
     }
