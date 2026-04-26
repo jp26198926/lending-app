@@ -49,6 +49,18 @@ interface Cycle {
   updatedAt: string;
 }
 
+interface Payment {
+  _id: string;
+  cycleId: {
+    _id: string;
+    cycleCount: number;
+  };
+  amount: number;
+  datePaid: string;
+  status: string;
+  createdAt: string;
+}
+
 export default function CyclePage() {
   const router = useRouter();
   const { loading: pageLoading, accessDenied } = usePageAccess();
@@ -85,6 +97,22 @@ export default function CyclePage() {
     isOpen: false,
     message: "",
   });
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [selectedCycleForPayment, setSelectedCycleForPayment] =
+    useState<Cycle | null>(null);
+  const [paymentFormData, setPaymentFormData] = useState({
+    amount: 0,
+    paymentDate: new Date().toISOString().split("T")[0],
+    status: "Completed",
+  });
+  const [showDeletePaymentModal, setShowDeletePaymentModal] = useState(false);
+  const [deletePaymentTarget, setDeletePaymentTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [showAddPaymentForm, setShowAddPaymentForm] = useState(false);
+  const [paymentAmountError, setPaymentAmountError] = useState("");
 
   const canAdd = hasPermission("/admin/cycle", "Add");
   const canEdit = hasPermission("/admin/cycle", "Edit");
@@ -437,6 +465,162 @@ export default function CyclePage() {
     }
   };
 
+  const handlePaymentClick = async (cycle: Cycle) => {
+    setSelectedCycleForPayment(cycle);
+    setPaymentFormData({
+      amount: 0,
+      paymentDate: new Date().toISOString().split("T")[0],
+      status: "Completed",
+    });
+    setShowAddPaymentForm(false);
+    setPaymentAmountError("");
+    setShowPaymentModal(true);
+    await fetchPayments(cycle._id);
+  };
+
+  const fetchPayments = async (cycleId: string) => {
+    try {
+      const res = await fetch(`/api/admin/payment?cycleId=${cycleId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPayments(data);
+      }
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+    }
+  };
+
+  const handleAddPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCycleForPayment) return;
+
+    if (paymentFormData.amount > selectedCycleForPayment.balance) {
+      setPaymentAmountError(
+        `Payment amount cannot exceed the balance of ${selectedCycleForPayment.balance.toLocaleString(
+          undefined,
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          },
+        )}`,
+      );
+      return;
+    }
+
+    setShowLoadingModal(true);
+
+    try {
+      const res = await fetch("/api/admin/payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loanId: selectedCycleForPayment.loanId._id,
+          cycleId: selectedCycleForPayment._id,
+          amount: paymentFormData.amount,
+          datePaid: paymentFormData.paymentDate,
+          status: paymentFormData.status,
+          createdBy: currentUser?._id,
+        }),
+      });
+
+      if (res.ok) {
+        toast.success("Payment added successfully! ✅");
+        setPaymentFormData({
+          amount: 0,
+          paymentDate: new Date().toISOString().split("T")[0],
+          status: "Completed",
+        });
+        setPaymentAmountError("");
+        setShowAddPaymentForm(false);
+        await fetchPayments(selectedCycleForPayment._id);
+        fetchCycles(selectedLoanId || undefined);
+      } else {
+        const error = await res.json();
+        setShowPaymentModal(false);
+        setErrorModal({
+          isOpen: true,
+          message: error.error || "Failed to add payment. Please try again.",
+        });
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setShowPaymentModal(false);
+      setErrorModal({
+        isOpen: true,
+        message: "An unexpected error occurred. Please try again.",
+      });
+    } finally {
+      setShowLoadingModal(false);
+    }
+  };
+
+  const handlePaymentAmountChange = (value: string) => {
+    const amount = parseFloat(value) || 0;
+    setPaymentFormData({
+      ...paymentFormData,
+      amount,
+    });
+
+    if (selectedCycleForPayment && amount > selectedCycleForPayment.balance) {
+      setPaymentAmountError(
+        `Amount exceeds balance of ${selectedCycleForPayment.balance.toLocaleString(
+          undefined,
+          {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          },
+        )}`,
+      );
+    } else {
+      setPaymentAmountError("");
+    }
+  };
+
+  const handleDeletePaymentClick = (id: string, name: string) => {
+    setDeletePaymentTarget({ id, name });
+    setShowDeletePaymentModal(true);
+  };
+
+  const handleDeletePaymentConfirm = async (reason?: string) => {
+    if (!deletePaymentTarget || !selectedCycleForPayment) return;
+
+    setShowDeletePaymentModal(false);
+    setShowLoadingModal(true);
+
+    try {
+      const res = await fetch(`/api/admin/payment/${deletePaymentTarget.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deletedReason: reason || "Deleted by user",
+        }),
+      });
+
+      if (res.ok) {
+        toast.success("Payment deleted successfully! ✅");
+        await fetchPayments(selectedCycleForPayment._id);
+        fetchCycles(selectedLoanId || undefined);
+      } else {
+        const error = await res.json();
+        setShowPaymentModal(false);
+        setErrorModal({
+          isOpen: true,
+          message: error.error || "Failed to delete payment. Please try again.",
+        });
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setShowPaymentModal(false);
+      setErrorModal({
+        isOpen: true,
+        message: "An unexpected error occurred. Please try again.",
+      });
+    } finally {
+      setShowLoadingModal(false);
+      setDeletePaymentTarget(null);
+    }
+  };
+
   const handleCloseFormModal = () => {
     resetForm();
     setShowFormModal(false);
@@ -719,6 +903,25 @@ export default function CyclePage() {
                       strokeLinejoin="round"
                       strokeWidth={2}
                       d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => handlePaymentClick(cycle)}
+                  className="p-1.5 sm:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Payments"
+                >
+                  <svg
+                    className="w-4 h-4 sm:w-5 sm:h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
                     />
                   </svg>
                 </button>
@@ -1011,6 +1214,341 @@ export default function CyclePage() {
         cancelText="Cancel"
         requireReason={false}
         isLoading={loading}
+      />
+
+      {/* Payment Modal */}
+      <Modal
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setSelectedCycleForPayment(null);
+          setPayments([]);
+          setShowAddPaymentForm(false);
+          setPaymentAmountError("");
+        }}
+        title={
+          selectedCycleForPayment
+            ? `Payments - Cycle #${selectedCycleForPayment.cycleCount} (${selectedCycleForPayment.loanId.loanNo})`
+            : "Payments"
+        }
+        size="xl"
+      >
+        <div className="space-y-6">
+          {/* Balance Summary - Always visible */}
+          {selectedCycleForPayment && (
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Total Due</p>
+                  <p className="text-sm font-bold text-gray-900 font-mono">
+                    {selectedCycleForPayment.totalDue.toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      },
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Total Paid</p>
+                  <p className="text-sm font-bold text-green-600 font-mono">
+                    {selectedCycleForPayment.totalPaid.toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      },
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Balance</p>
+                  <p className="text-sm font-bold text-red-600 font-mono">
+                    {selectedCycleForPayment.balance.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                </div>
+                {showAddPaymentForm && paymentFormData.amount > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">
+                      Balance After Payment
+                    </p>
+                    <p className="text-sm font-bold text-orange-600 font-mono">
+                      {(
+                        selectedCycleForPayment.balance - paymentFormData.amount
+                      ).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Toggle Add Payment Button */}
+          {!showAddPaymentForm &&
+            selectedCycleForPayment?.status === "Active" && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowAddPaymentForm(true);
+                    setPaymentFormData({
+                      amount: 0,
+                      paymentDate: new Date().toISOString().split("T")[0],
+                      status: "Completed",
+                    });
+                    setPaymentAmountError("");
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark transition-colors"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                    />
+                  </svg>
+                  Add Payment
+                </button>
+              </div>
+            )}
+
+          {/* Add Payment Form - Toggleable */}
+          {showAddPaymentForm && (
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">
+                  Add New Payment
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowAddPaymentForm(false);
+                    setPaymentFormData({
+                      amount: 0,
+                      paymentDate: new Date().toISOString().split("T")[0],
+                      status: "Completed",
+                    });
+                    setPaymentAmountError("");
+                  }}
+                  className="text-gray-500 hover:text-gray-700 transition-colors"
+                  title="Cancel"
+                >
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <form onSubmit={handleAddPayment} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={paymentFormData.amount || ""}
+                    onChange={(e) => handlePaymentAmountChange(e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-zentyal-primary font-mono ${
+                      paymentAmountError
+                        ? "border-red-500"
+                        : "border-gray-300"
+                    }`}
+                    required
+                    min="0.01"
+                    placeholder="0.00"
+                  />
+                  {paymentAmountError && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {paymentAmountError}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Payment Date
+                  </label>
+                  <input
+                    type="date"
+                    value={paymentFormData.paymentDate}
+                    onChange={(e) =>
+                      setPaymentFormData({
+                        ...paymentFormData,
+                        paymentDate: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-zentyal-primary"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddPaymentForm(false);
+                      setPaymentFormData({
+                        amount: 0,
+                        paymentDate: new Date().toISOString().split("T")[0],
+                        status: "Completed",
+                      });
+                      setPaymentAmountError("");
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!!paymentAmountError}
+                    className="px-4 py-2 bg-zentyal-primary text-white rounded-lg hover:bg-zentyal-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Add Payment
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Payment History List - Hidden when form is visible */}
+          {!showAddPaymentForm && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                Payment History
+              </h3>
+              {payments.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <svg
+                    className="mx-auto h-12 w-12 text-gray-400 mb-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <p>No payments recorded yet</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date Paid
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Amount
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {payments.map((payment) => (
+                        <tr key={payment._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(payment.datePaid)
+                              .toISOString()
+                              .split("T")[0]}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right font-mono">
+                            {payment.amount.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                              {payment.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            {canDelete && (
+                              <button
+                                onClick={() =>
+                                  handleDeletePaymentClick(
+                                    payment._id,
+                                    `Payment of ${payment.amount.toLocaleString(
+                                      undefined,
+                                      {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      },
+                                    )}`,
+                                  )
+                                }
+                                className="text-red-600 hover:text-red-800 transition-colors"
+                                title="Delete Payment"
+                              >
+                                <svg
+                                  className="w-5 h-5 inline"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Delete Payment Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeletePaymentModal}
+        onClose={() => {
+          setShowDeletePaymentModal(false);
+          setDeletePaymentTarget(null);
+        }}
+        onConfirm={handleDeletePaymentConfirm}
+        title="Delete Payment"
+        message={`Are you sure you want to delete "${deletePaymentTarget?.name}"? This action cannot be undone.`}
+        confirmText="Delete Payment"
+        cancelText="Cancel"
+        requireReason={true}
+        isLoading={false}
       />
 
       {/* Loading Modal */}
