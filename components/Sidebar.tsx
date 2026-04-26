@@ -16,7 +16,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useState } from "react";
 
-const iconMap: Record<string, any> = {
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   "/home": HomeIcon,
   "/admin/user": UsersIcon,
   "/admin/role": UserGroupIcon,
@@ -42,9 +42,16 @@ export default function Sidebar() {
   const getNavigationLinks = () => {
     if (!user) return [];
 
-    // Build links from permissions (pages user has access to)
+    // Build links from permissions (pages user has Access permission to)
     const permissionBasedLinks = permissions
-      .filter((perm) => perm.page.status === "ACTIVE")
+      .filter(
+        (perm) =>
+          perm.page.status === "ACTIVE" &&
+          perm.permissions.some(
+            (p) =>
+              p.permission.toLowerCase() === "access" && p.status === "ACTIVE"
+          )
+      )
       .map((perm) => ({
         label: perm.page.page,
         path: perm.page.path,

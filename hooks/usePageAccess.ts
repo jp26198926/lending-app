@@ -27,10 +27,16 @@ export function usePageAccess() {
     // For /home, allow access if logged in (no specific permission needed)
     if (pathname === "/home") return false;
 
-    // For admin pages, check if user has permission
+    // For admin pages, check if user has "Access" permission
     if (pathname.startsWith("/admin")) {
-      const hasAccess = permissions.some((p) =>
-        pathname.startsWith(p.page.path),
+      const hasAccess = permissions.some(
+        (p) =>
+          pathname.startsWith(p.page.path) &&
+          p.permissions.some(
+            (perm) =>
+              perm.permission.toLowerCase() === "access" &&
+              perm.status === "ACTIVE"
+          )
       );
       return !hasAccess;
     }
