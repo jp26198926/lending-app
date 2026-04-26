@@ -36,6 +36,115 @@ This version has breaking changes — conventions and classnames may all differ 
 
 ---
 
+## Data Formatting Standards
+
+### Date Format - YYYY-MM-DD (ISO 8601)
+
+**All date fields MUST use YYYY-MM-DD format throughout the application.**
+
+**Display Formatting:**
+
+```typescript
+// ✅ CORRECT - Display dates in YYYY-MM-DD format
+{
+  new Date(dateField).toISOString().split("T")[0];
+}
+
+// ❌ WRONG - Do not use toLocaleDateString()
+{
+  new Date(dateField).toLocaleDateString();
+}
+```
+
+**Form Input:**
+
+```typescript
+// Date inputs already use YYYY-MM-DD by default
+<input
+  type="date"
+  value={formData.dateField}  // Already in YYYY-MM-DD
+  onChange={(e) => setFormData({...formData, dateField: e.target.value})}
+/>
+```
+
+**DataTable Columns:**
+
+```typescript
+{
+  key: "dateDue",
+  label: "Due Date",
+  sortable: true,
+  render: (item) => (
+    <span className="text-sm text-gray-600">
+      {new Date(item.dateDue).toISOString().split("T")[0]}
+    </span>
+  ),
+  exportValue: (item) => new Date(item.dateDue).toISOString().split("T")[0],
+}
+```
+
+### Amount Format - No Currency Symbol
+
+**All amount/money fields MUST NOT include currency symbols.**
+
+**Display Formatting:**
+
+```typescript
+// ✅ CORRECT - No currency symbol, only numbers
+{amount.toLocaleString(undefined, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})}
+// Output: 1,234.56
+
+// ❌ WRONG - Do not add currency symbols
+₱{amount.toLocaleString()}  // Wrong!
+${amount.toLocaleString()}   // Wrong!
+```
+
+**Form Input:**
+
+```typescript
+// Number inputs without currency
+<input
+  type="number"
+  step="0.01"
+  value={formData.amount}
+  placeholder="0.00"
+  className="font-mono"  // Use monospace font for amounts
+/>
+```
+
+**DataTable Columns:**
+
+```typescript
+{
+  key: "principal",
+  label: "Principal",
+  sortable: true,
+  render: (item) => (
+    <div className="text-right">
+      <span className="text-sm text-gray-900 font-mono">
+        {item.principal.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </span>
+    </div>
+  ),
+  exportValue: (item) => item.principal.toFixed(2),
+}
+```
+
+**Best Practices:**
+
+- Use `font-mono` class for amount displays to align decimals
+- Always right-align amount columns in tables
+- Always show 2 decimal places for currency amounts
+- Use `toFixed(2)` for calculations to avoid floating-point errors
+
+---
+
 ## App Features
 
 ### Authentication & Authorization System
