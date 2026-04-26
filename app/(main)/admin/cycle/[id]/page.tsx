@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import PageNotFound from "@/components/PageNotFound";
 import LoadingModal from "@/components/LoadingModal";
 import ErrorModal from "@/components/ErrorModal";
+import Modal from "@/components/Modal";
 import toast from "react-hot-toast";
 
 interface Client {
@@ -32,6 +33,17 @@ interface User {
   firstName: string;
   lastName: string;
   email: string;
+}
+
+interface Payment {
+  _id: string;
+  paymentNo: string;
+  amount: number;
+  datePaid: string;
+  remarks?: string;
+  status: string;
+  createdAt: string;
+  createdBy?: User;
 }
 
 interface Cycle {
@@ -88,6 +100,9 @@ export default function CycleDetailPage() {
     isOpen: false,
     message: "",
   });
+  const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
 
   const fetchCycle = async () => {
     try {
@@ -143,6 +158,35 @@ export default function CycleDetailPage() {
     } catch (error) {
       console.error("Error fetching loans:", error);
     }
+  };
+
+  const fetchPaymentHistory = async () => {
+    try {
+      setLoadingPayments(true);
+      const res = await fetch(`/api/admin/payment?cycleId=${cycleId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPayments(data);
+      } else {
+        setErrorModal({
+          isOpen: true,
+          message: "Failed to fetch payment history. Please try again.",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "Failed to fetch payment history. Please try again.",
+      });
+    } finally {
+      setLoadingPayments(false);
+    }
+  };
+
+  const handleViewPaymentHistory = () => {
+    setShowPaymentHistoryModal(true);
+    fetchPaymentHistory();
   };
 
   useEffect(() => {
@@ -215,6 +259,14 @@ export default function CycleDetailPage() {
     return parts.join(" ");
   };
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   return (
     // <div className="max-w-5xl mx-auto pb-8">
     // <div className="max-w-5xl mx-auto mt-10 md:mt-0">
@@ -263,6 +315,32 @@ export default function CycleDetailPage() {
           <p className="text-gray-600">
             {cycle.loanId.loanNo} - {getClientFullName(cycle.loanId.clientId)}
           </p>
+        </div>
+
+        {/* Payment History Button */}
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button
+            onClick={handleViewPaymentHistory}
+            className="flex-1 sm:flex-none px-4 py-2 bg-zentyal-primary hover:bg-zentyal-dark
+                     text-white rounded-lg transition-all duration-200 shadow hover:shadow-lg
+                     flex items-center justify-center gap-2"
+            title="View Payment History"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            <span className="hidden sm:inline">Payment History</span>
+          </button>
         </div>
       </div>
 
@@ -738,7 +816,7 @@ export default function CycleDetailPage() {
             <div>
               <p className="text-sm text-gray-600">Created At</p>
               <p className="text-gray-900 font-medium">
-                {new Date(cycle.createdAt).toLocaleString()}
+                {formatDate(cycle.createdAt)}
               </p>
             </div>
             {cycle.createdBy && (
@@ -752,7 +830,7 @@ export default function CycleDetailPage() {
             <div>
               <p className="text-sm text-gray-600">Last Updated</p>
               <p className="text-gray-900 font-medium">
-                {new Date(cycle.updatedAt).toLocaleString()}
+                {formatDate(cycle.updatedAt)}
               </p>
             </div>
             {cycle.updatedBy && (
@@ -768,7 +846,7 @@ export default function CycleDetailPage() {
                 <div>
                   <p className="text-sm text-gray-600">Deleted At</p>
                   <p className="text-gray-900 font-medium">
-                    {new Date(cycle.deletedAt).toLocaleString()}
+                    {formatDate(cycle.deletedAt)}
                   </p>
                 </div>
                 {cycle.deletedBy && (
@@ -803,6 +881,128 @@ export default function CycleDetailPage() {
         onClose={() => setErrorModal({ isOpen: false, message: "" })}
         message={errorModal.message}
       />
+
+      {/* Payment History Modal */}
+      <Modal
+        isOpen={showPaymentHistoryModal}
+        onClose={() => setShowPaymentHistoryModal(false)}
+        title="Payment History"
+        size="xl"
+      >
+        <div className="space-y-4">
+          {loadingPayments ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-zentyal-primary"></div>
+            </div>
+          ) : payments.length === 0 ? (
+            <div className="text-center py-8">
+              <svg
+                className="w-16 h-16 text-gray-400 mx-auto mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              <p className="text-gray-500 text-lg">
+                No payments found for this cycle
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                <div className="flex items-center gap-2 text-blue-800">
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span className="font-semibold">
+                    Total Payments: {payments.length}
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Payment No
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date Paid
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Created By
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Remarks
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {payments.map((payment) => (
+                      <tr key={payment._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {payment.paymentNo}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                          {payment.amount.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                          {formatDate(payment.datePaid)}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              payment.status === "Completed"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {payment.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                          {payment.createdBy
+                            ? `${payment.createdBy.firstName} ${payment.createdBy.lastName}`
+                            : "N/A"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          {payment.remarks || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
