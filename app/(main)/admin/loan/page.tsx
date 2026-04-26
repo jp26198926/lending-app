@@ -591,28 +591,32 @@ export default function LoanPage() {
                     />
                   </svg>
                 </button>
-                {canEdit && loan.status !== "Cancelled" && (
-                  <button
-                    onClick={() => handleEdit(loan)}
-                    className="p-1.5 sm:p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
-                    title="Edit Loan"
-                  >
-                    <svg
-                      className="w-4 h-4 sm:w-5 sm:h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                {/* Hide Edit, Delete, and Activate buttons for Completed loans */}
+                {loan.status !== "Completed" &&
+                  canEdit &&
+                  loan.status !== "Cancelled" && (
+                    <button
+                      onClick={() => handleEdit(loan)}
+                      className="p-1.5 sm:p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                      title="Edit Loan"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                  </button>
-                )}
-                {canDelete &&
+                      <svg
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                {loan.status !== "Completed" &&
+                  canDelete &&
                   loan.status === "Active" &&
                   !loansWithActiveCycles.has(loan._id) && (
                     <button
@@ -640,7 +644,8 @@ export default function LoanPage() {
                       </svg>
                     </button>
                   )}
-                {canEdit &&
+                {loan.status !== "Completed" &&
+                  canEdit &&
                   (loan.status === "Cancelled" ||
                     loan.status === "Completed") && (
                     <button
