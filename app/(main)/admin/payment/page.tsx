@@ -94,7 +94,6 @@ export default function PaymentPage() {
   });
 
   const canAdd = hasPermission("/admin/payment", "Add");
-  const canEdit = hasPermission("/admin/payment", "Edit");
   const canDelete = hasPermission("/admin/payment", "Delete");
 
   const fetchPayments = async (loanId?: string, cycleId?: string) => {
@@ -255,19 +254,6 @@ export default function PaymentPage() {
       setLoading(false);
       setShowLoadingModal(false);
     }
-  };
-
-  const handleEdit = (payment: Payment) => {
-    setFormData({
-      _id: payment._id,
-      loanId: payment.loanId._id,
-      cycleId: payment.cycleId._id,
-      amount: payment.amount,
-      datePaid: new Date(payment.datePaid).toISOString().split("T")[0],
-      remarks: payment.remarks || "",
-    });
-    setIsEditing(true);
-    setShowFormModal(true);
   };
 
   const handleDeleteClick = (id: string, name: string) => {
@@ -598,27 +584,6 @@ export default function PaymentPage() {
                     />
                   </svg>
                 </button>
-                {canEdit && payment.status === "Completed" && (
-                  <button
-                    onClick={() => handleEdit(payment)}
-                    className="text-yellow-600 hover:text-yellow-800 transition-colors"
-                    title="Edit Payment"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                  </button>
-                )}
                 {canDelete && payment.status === "Completed" && (
                   <button
                     onClick={() =>
