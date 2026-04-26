@@ -23,7 +23,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated) {
-            router.push("/admin/user");
+            router.push("/admin/dashboard");
           }
         }
       } catch (error) {
@@ -52,7 +52,7 @@ export default function LoginPage() {
         // Refresh auth context to update user and permissions
         await refreshAuth();
         // Redirect to dashboard/home page
-        router.push("/admin/user");
+        router.push("/admin/dashboard");
       } else {
         setError(data.error || "Login failed");
       }
