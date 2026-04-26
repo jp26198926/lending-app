@@ -12,6 +12,7 @@ import Ledger, {
   LedgerDirection,
   LedgerStatus,
 } from "@/models/Ledger";
+import Settings from "@/models/Settings";
 
 export async function POST(request: NextRequest) {
   // 1. Authentication check (no permission needed for user's own withdrawal)
@@ -128,10 +129,51 @@ export async function POST(request: NextRequest) {
       { session },
     );
 
-    // 11. Commit transaction
+    // 11. Update Settings - deduct from cashOnHand
+    const settings = await Settings.findOne({}).session(session);
+    
+    if (!settings) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        { error: "Settings not found" },
+        { status: 404 },
+      );
+    }
+
+    // Check if settings has sufficient cashOnHand
+    if (settings.cashOnHand < amount) {
+      await session.abortTransaction();
+      return NextResponse.json(
+        {
+          error: "Insufficient cash on hand in settings",
+          details: `Available: ${settings.cashOnHand.toFixed(2)}, Required: ${amount.toFixed(2)}`,
+        },
+        { status: 400 },
+      );
+    }
+
+    // Deduct from cashOnHand
+    await Settings.findByIdAndUpdate(
+      settings._id,
+      {
+        $inc: {
+          cashOnHand: -amount, // Deduct withdrawal amount
+        },
+        $set: {
+          updatedBy: currentUser.userId,
+          updatedAt: new Date(),
+        },
+      },
+      {
+        session,
+        runValidators: true,
+      },
+    );
+
+    // 12. Commit transaction
     await session.commitTransaction();
 
-    // 12. Return success response
+    // 13. Return success response
     return NextResponse.json(
       {
         message: "Withdrawal successful",
@@ -146,7 +188,7 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (err: unknown) {
-    // 13. Rollback on error
+    // 14. Rollback on error
     await session.abortTransaction();
 
     console.error("Withdrawal transaction error:", err);
@@ -158,7 +200,7 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   } finally {
-    // 14. Always end session
+    // 15. Always end session
     await session.endSession();
   }
 }
