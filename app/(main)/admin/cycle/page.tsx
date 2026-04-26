@@ -310,7 +310,32 @@ export default function CyclePage() {
     setShowFormModal(true);
   };
 
-  const handleDeleteClick = (id: string, name: string) => {
+  const handleDeleteClick = async (id: string, name: string) => {
+    // Check if there are completed payments for this cycle
+    try {
+      const res = await fetch(
+        `/api/admin/payment?cycleId=${id}&status=Completed`,
+      );
+      if (res.ok) {
+        const payments = await res.json();
+        if (payments.length > 0) {
+          setErrorModal({
+            isOpen: true,
+            message: `Cannot delete this cycle. There ${payments.length === 1 ? "is 1 completed payment" : `are ${payments.length} completed payments`} associated with this cycle. Please cancel the payment(s) first in the Payment Management page before deleting this cycle.`,
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Error checking payments:", error);
+      setErrorModal({
+        isOpen: true,
+        message: "Failed to verify cycle payments. Please try again.",
+      });
+      return;
+    }
+
+    // If no completed payments, proceed with delete
     setDeleteTarget({ id, name });
     setShowDeleteModal(true);
   };

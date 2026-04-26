@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       .populate("createdBy", "firstName lastName email")
       .populate("updatedBy", "firstName lastName email")
       .populate("deletedBy", "firstName lastName email")
-      .sort({ date: -1, createdAt: -1 });
+      .sort({ createdAt: -1 });
 
     return NextResponse.json(ledgers, { status: 200 });
   } catch (error) {
