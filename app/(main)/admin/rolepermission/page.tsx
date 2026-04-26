@@ -9,7 +9,7 @@ import { LoadingSpinner, StatusBadge } from "@/components/CRUDComponents";
 import Modal from "@/components/Modal";
 import ConfirmModal from "@/components/ConfirmModal";
 import LoadingModal from "@/components/LoadingModal";
-import DataTable, { Column } from "@/components/DataTable";
+import DataTable from "@/components/DataTable";
 
 interface Role {
   _id: string;
@@ -237,16 +237,20 @@ export default function RolePermissionManagement() {
     setShowDeleteModal(true);
   };
 
-  const handleDeleteConfirm = async (reason: string) => {
-    if (!deleteTarget) return;
+  const handleDeleteConfirm = async (reason?: string) => {
+    if (!deleteTarget || !reason) return;
 
     setShowDeleteModal(false);
     setShowLoadingModal(true);
 
     try {
       const res = await fetch(
-        `/api/admin/rolepermission/${deleteTarget.id}?deletedBy=${currentUser?._id}&deletedReason=${encodeURIComponent(reason)}`,
-        { method: "DELETE" },
+        `/api/admin/rolepermission/${deleteTarget.id}`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        },
       );
 
       if (!res.ok) {

@@ -7,7 +7,7 @@ import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (reason?: string) => void;
+  onConfirm: (reason?: string) => void | Promise<void>;
   title?: string;
   message?: string;
   confirmText?: string;

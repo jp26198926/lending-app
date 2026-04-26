@@ -82,6 +82,10 @@ export default function RoleManagement() {
   const [deleteRolePermissionTarget, setDeleteRolePermissionTarget] = useState<
     string | null
   >(null);
+  const [showActivateRolePermissionModal, setShowActivateRolePermissionModal] =
+    useState(false);
+  const [activateRolePermissionTarget, setActivateRolePermissionTarget] =
+    useState<{ id: string; name: string } | null>(null);
 
   const canAdd = hasPermission("/admin/role", "Add");
   const canEdit = hasPermission("/admin/role", "Edit");
@@ -322,7 +326,6 @@ export default function RoleManagement() {
           roleId: selectedRole._id,
           pageId: rolePermissionFormData.pageId,
           permissionId: rolePermissionFormData.permissionId,
-          createdBy: currentUser?._id,
         }),
       });
 
@@ -361,8 +364,7 @@ export default function RoleManagement() {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            deletedBy: currentUser?._id,
-            deletedReason: reason,
+            reason: reason,
           }),
         }
       );
@@ -383,6 +385,53 @@ export default function RoleManagement() {
         err instanceof Error
           ? err.message
           : "Failed to delete role permission"
+      );
+    } finally {
+      setRolePermissionsLoading(false);
+    }
+  };
+
+  const handleActivateRolePermissionClick = (
+    id: string,
+    pageName: string,
+    permissionName: string
+  ) => {
+    setActivateRolePermissionTarget({
+      id,
+      name: `${pageName} - ${permissionName}`,
+    });
+    setShowActivateRolePermissionModal(true);
+  };
+
+  const handleActivateRolePermissionConfirm = async () => {
+    if (!activateRolePermissionTarget || !selectedRole) return;
+
+    try {
+      setRolePermissionsLoading(true);
+      const res = await fetch(
+        `/api/admin/rolepermission/${activateRolePermissionTarget.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(
+          errorData.error || "Failed to activate role permission"
+        );
+      }
+
+      await fetchRolePermissions(selectedRole._id);
+      setShowActivateRolePermissionModal(false);
+      setActivateRolePermissionTarget(null);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to activate role permission"
       );
     } finally {
       setRolePermissionsLoading(false);
@@ -960,29 +1009,60 @@ export default function RoleManagement() {
                             <StatusBadge status={rp.status} />
                           </td>
                           <td className="px-4 py-3 text-center">
-                            {rp.status === "ACTIVE" && canDelete && (
-                              <button
-                                onClick={() =>
-                                  handleDeleteRolePermissionClick(rp._id)
-                                }
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete Permission"
-                              >
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
+                            <div className="flex items-center justify-center gap-2">
+                              {rp.status === "ACTIVE" && canDelete && (
+                                <button
+                                  onClick={() =>
+                                    handleDeleteRolePermissionClick(rp._id)
+                                  }
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Delete Permission"
                                 >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                  />
-                                </svg>
-                              </button>
-                            )}
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
+                              {(rp.status === "DELETED" ||
+                                rp.status === "INACTIVE") &&
+                                canEdit && (
+                                  <button
+                                    onClick={() =>
+                                      handleActivateRolePermissionClick(
+                                        rp._id,
+                                        rp.pageId.page,
+                                        rp.permissionId.permission
+                                      )
+                                    }
+                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                    title="Activate Permission"
+                                  >
+                                    <svg
+                                      className="w-4 h-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                      />
+                                    </svg>
+                                  </button>
+                                )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1008,6 +1088,22 @@ export default function RoleManagement() {
         confirmText="Delete"
         cancelText="Cancel"
         requireReason={true}
+        isLoading={rolePermissionsLoading}
+      />
+
+      {/* Activate Role Permission Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showActivateRolePermissionModal}
+        onClose={() => {
+          setShowActivateRolePermissionModal(false);
+          setActivateRolePermissionTarget(null);
+        }}
+        onConfirm={handleActivateRolePermissionConfirm}
+        title="Activate Role Permission"
+        message={`Are you sure you want to activate ${activateRolePermissionTarget?.name}?`}
+        confirmText="Activate"
+        cancelText="Cancel"
+        requireReason={false}
         isLoading={rolePermissionsLoading}
       />
 
