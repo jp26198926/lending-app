@@ -30,6 +30,9 @@ export interface ICycle extends Document {
   deletedBy?: mongoose.Types.ObjectId | string;
   deletedReason?: string;
   status: CycleStatus;
+  autoCreated?: boolean;
+  previousCycleId?: mongoose.Types.ObjectId | string;
+  expirationReason?: string;
 }
 
 // Cycle schema
@@ -122,6 +125,20 @@ const CycleSchema = new Schema<ICycle>(
       enum: Object.values(CycleStatus),
       default: CycleStatus.ACTIVE,
       required: true,
+    },
+    autoCreated: {
+      type: Boolean,
+      default: false,
+      required: false,
+    },
+    previousCycleId: {
+      type: Schema.Types.ObjectId,
+      ref: "Cycle",
+      required: false,
+    },
+    expirationReason: {
+      type: String,
+      required: false,
     },
   },
   {
