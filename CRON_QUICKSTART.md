@@ -52,15 +52,28 @@ curl -X POST http://localhost:3000/api/cron/process-cycles \
      - Weekly: +7 days
      - Fortnightly: +14 days
      - Monthly: +30 days
-   - Same principal and interest rate as loan
+   - **Principal = Expired cycle's balance** (if > 0) or original loan principal
+   - Interest calculated on the new principal
    - Status: Active
 
 **Example:**
 
 ```
-Loan Terms: Weekly
-Cycle #1 Due: 2026-04-25 → Status changes to Expired
-Cycle #2 Created with Due: 2026-05-02 (25 + 7 days)
+Loan Principal: 10,000 | Interest Rate: 5% | Terms: Weekly
+
+Cycle #1 Due: 2026-04-25
+  - Principal: 10,000
+  - Interest: 500
+  - Total Due: 10,500
+  - Total Paid: 3,000
+  - Balance: 7,500
+  → Status changes to Expired
+
+Cycle #2 Created with:
+  - Due: 2026-05-02 (25 + 7 days)
+  - Principal: 7,500 (carried from Cycle #1 balance)
+  - Interest: 375 (7,500 × 5%)
+  - Total Due: 7,875
 ```
 
 ---
@@ -71,7 +84,7 @@ Check execution in cron-job.org dashboard or look for logs:
 
 ```
 [CRON] Found 5 expired cycles to process
-[CRON] Processed: Expired Cycle #1, Created Cycle #2 for LN-001
+[CRON] Processed: Expired Cycle #1, Created Cycle #2 for LN-001 - Balance carried forward: 7500.00
 [CRON] Process Cycles Summary: { expired: 5, created: 5, errors: 0 }
 ```
 

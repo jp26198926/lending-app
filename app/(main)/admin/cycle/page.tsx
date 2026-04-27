@@ -208,10 +208,31 @@ export default function CyclePage() {
 
         const latestActiveCycle = activeCycles[0];
 
-        // Determine principal: use latest active cycle's balance or loan's principal
-        const principal = latestActiveCycle
-          ? latestActiveCycle.balance
-          : selectedLoan.principal;
+        // Check for expired cycles with balance
+        const expiredCycles = cyclesData.filter(
+          (c: Cycle) => c.status === "Expired",
+        );
+        const mostRecentExpiredCycle =
+          expiredCycles.length > 0
+            ? expiredCycles.sort(
+                (a: Cycle, b: Cycle) =>
+                  new Date(b.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              )[0]
+            : null;
+
+        // Determine principal:
+        // 1. If there's an expired cycle with balance > 0, use that balance
+        // 2. Else use latest active cycle's balance
+        // 3. Else use loan's original principal
+        let principal: number;
+        if (mostRecentExpiredCycle && mostRecentExpiredCycle.balance > 0) {
+          principal = mostRecentExpiredCycle.balance;
+        } else if (latestActiveCycle) {
+          principal = latestActiveCycle.balance;
+        } else {
+          principal = selectedLoan.principal;
+        }
 
         // Get interest rate from loan
         const interestRate = selectedLoan.interestRate;
@@ -1370,9 +1391,7 @@ export default function CyclePage() {
                     value={paymentFormData.amount || ""}
                     onChange={(e) => handlePaymentAmountChange(e.target.value)}
                     className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-zentyal-primary font-mono ${
-                      paymentAmountError
-                        ? "border-red-500"
-                        : "border-gray-300"
+                      paymentAmountError ? "border-red-500" : "border-gray-300"
                     }`}
                     required
                     min="0.01"
@@ -1475,9 +1494,11 @@ export default function CyclePage() {
                       {payments.map((payment) => (
                         <tr key={payment._id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(payment.datePaid)
-                              .toISOString()
-                              .split("T")[0]}
+                            {
+                              new Date(payment.datePaid)
+                                .toISOString()
+                                .split("T")[0]
+                            }
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right font-mono">
                             {payment.amount.toLocaleString(undefined, {

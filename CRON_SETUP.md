@@ -29,8 +29,9 @@ The lending app uses an external cron service to automatically process expired c
      - **Weekly:** +7 days from expired cycle's due date
      - **Fortnightly:** +14 days from expired cycle's due date
      - **Monthly:** +30 days from expired cycle's due date
-   - Copies principal, interest rate from loan
-   - Calculates interest amount and total due
+   - **Carries forward unpaid balance:** If the expired cycle has a balance > 0, that balance becomes the new cycle's principal (instead of the original loan principal)
+   - Calculates interest amount based on the new principal
+   - Calculates total due (principal + interest)
    - Marks as auto-created with reference to previous cycle
 
 ---

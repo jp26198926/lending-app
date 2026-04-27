@@ -6,13 +6,13 @@ import "@/models/Loan";
 
 /**
  * Cron Job Endpoint: Process Expired Cycles
- * 
+ *
  * This endpoint should be called by cron-job.org or similar service.
  * It will:
  * 1. Find all Active cycles that are past their due date
  * 2. Mark them as Expired
  * 3. Create new cycles automatically with proper due date calculation
- * 
+ *
  * Security: Requires CRON_SECRET in headers
  */
 
@@ -22,13 +22,10 @@ export async function POST(request: NextRequest) {
   try {
     // Security: Verify cron secret
     const cronSecret = request.headers.get("x-cron-secret");
-    
+
     if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
       console.error("Unauthorized cron job attempt");
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     await connectDB();
@@ -43,11 +40,14 @@ export async function POST(request: NextRequest) {
     })
       .populate({
         path: "loanId",
-        select: "loanNo clientId principal interestRate terms dateStarted status",
+        select:
+          "loanNo clientId principal interestRate terms dateStarted status",
       })
       .sort({ dateDue: 1 }); // Oldest first
 
-    console.log(`[CRON] Found ${expiredCycles.length} expired cycles to process`);
+    console.log(
+      `[CRON] Found ${expiredCycles.length} expired cycles to process`,
+    );
 
     if (expiredCycles.length === 0) {
       return NextResponse.json({
@@ -76,7 +76,10 @@ export async function POST(request: NextRequest) {
 
         // Double-check cycle is still active (prevent race conditions - case-insensitive)
         const currentCycle = await Cycle.findById(cycle._id).session(session);
-        if (!currentCycle || currentCycle.status.toLowerCase() !== CycleStatus.ACTIVE.toLowerCase()) {
+        if (
+          !currentCycle ||
+          currentCycle.status.toLowerCase() !== CycleStatus.ACTIVE.toLowerCase()
+        ) {
           await session.abortTransaction();
           continue;
         }
@@ -92,7 +95,7 @@ export async function POST(request: NextRequest) {
               expirationReason: `Auto-expired on ${today.toISOString().split("T")[0]} (Due: ${new Date(cycle.dateDue).toISOString().split("T")[0]})`,
             },
           },
-          { session }
+          { session },
         );
 
         results.expired.push(`Cycle #${cycle.cycleCount} - ${loan.loanNo}`);
@@ -100,7 +103,9 @@ export async function POST(request: NextRequest) {
         // 2. Check if loan is still active before creating new cycle (case-insensitive)
         if (loan.status.toLowerCase() !== "active") {
           await session.commitTransaction();
-          console.log(`[CRON] Loan ${loan.loanNo} is not active, skipping new cycle creation`);
+          console.log(
+            `[CRON] Loan ${loan.loanNo} is not active, skipping new cycle creation`,
+          );
           continue;
         }
 
@@ -113,7 +118,8 @@ export async function POST(request: NextRequest) {
           .sort({ cycleCount: -1 })
           .limit(1);
 
-        const nextCycleCount = allCycles.length > 0 ? allCycles[0].cycleCount + 1 : 1;
+        const nextCycleCount =
+          allCycles.length > 0 ? allCycles[0].cycleCount + 1 : 1;
 
         // 4. Calculate new due date based on loan terms
         const termsMap: { [key: string]: number } = {
@@ -130,7 +136,9 @@ export async function POST(request: NextRequest) {
         newDueDate.setDate(newDueDate.getDate() + daysToAdd);
 
         // 5. Calculate cycle amounts
-        const principal = loan.principal;
+        // If the expired cycle has a balance (unpaid amount), use that as the new principal
+        // This ensures unpaid balances are carried forward to the next cycle
+        const principal = cycle.balance > 0 ? cycle.balance : loan.principal;
         const interestRate = loan.interestRate;
         const interestAmount = (principal * interestRate) / 100;
         const totalDue = principal + interestAmount;
@@ -158,28 +166,29 @@ export async function POST(request: NextRequest) {
               previousCycleId: cycle._id,
             },
           ],
-          { session }
+          { session },
         );
 
         results.created.push(
-          `Cycle #${nextCycleCount} - ${loan.loanNo} (Due: ${newDueDate.toISOString().split("T")[0]})`
+          `Cycle #${nextCycleCount} - ${loan.loanNo} (Due: ${newDueDate.toISOString().split("T")[0]})${cycle.balance > 0 ? ` [Balance carried: ${cycle.balance.toFixed(2)}]` : ""}`,
         );
 
         await session.commitTransaction();
 
         console.log(
-          `[CRON] Processed: Expired Cycle #${cycle.cycleCount}, Created Cycle #${nextCycleCount} (ID: ${newCycle._id}) for ${loan.loanNo}`
+          `[CRON] Processed: Expired Cycle #${cycle.cycleCount}, Created Cycle #${nextCycleCount} (ID: ${newCycle._id}) for ${loan.loanNo}${cycle.balance > 0 ? ` - Balance carried forward: ${cycle.balance.toFixed(2)}` : ""}`,
         );
       } catch (error: unknown) {
         await session.abortTransaction();
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
         results.errors.push({
           cycleId: cycle._id.toString(),
           error: errorMessage,
         });
         console.error(
           `[CRON] Error processing cycle ${cycle._id}:`,
-          errorMessage
+          errorMessage,
         );
       } finally {
         await session.endSession();
@@ -217,7 +226,7 @@ export async function POST(request: NextRequest) {
         details: error instanceof Error ? error.message : "Unknown error",
         duration: Date.now() - startTime,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -225,12 +234,9 @@ export async function POST(request: NextRequest) {
 // GET endpoint for testing/manual trigger (optional - remove in production)
 export async function GET(request: NextRequest) {
   const cronSecret = request.headers.get("x-cron-secret");
-  
+
   if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Call POST method

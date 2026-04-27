@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     // 11. Update Settings - deduct from cashOnHand
     const settings = await Settings.findOne({}).session(session);
-    
+
     if (!settings) {
       await session.abortTransaction();
       return NextResponse.json(

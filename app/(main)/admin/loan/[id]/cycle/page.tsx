@@ -184,11 +184,26 @@ export default function LoanCyclesPage() {
     const maxCycleCount =
       cycles.length > 0 ? Math.max(...cycles.map((c) => c.cycleCount)) : 0;
 
-    // Get principal and interest rate from loan
-    const principal = loan?.principal || 0;
+    // Check for previous expired cycle with balance
+    const expiredCycles = cycles.filter((c) => c.status === "Expired");
+    const mostRecentExpiredCycle =
+      expiredCycles.length > 0
+        ? expiredCycles.sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          )[0]
+        : null;
+
+    // Get principal and interest rate
+    let principal = loan?.principal || 0;
     const interestRate = loan?.interestRate || 0;
 
-    // Auto-calculate interest amount and total due
+    // If there's an expired cycle with balance, use that balance as new principal
+    if (mostRecentExpiredCycle && mostRecentExpiredCycle.balance > 0) {
+      principal = mostRecentExpiredCycle.balance;
+    }
+
+    // Auto-calculate interest amount and total due based on (potentially new) principal
     const interestAmount = (principal * interestRate) / 100;
     const totalDue = principal + interestAmount;
 

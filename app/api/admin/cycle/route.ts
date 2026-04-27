@@ -143,10 +143,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check for previous expired cycle
+    const previousExpiredCycle = await Cycle.findOne({
+      loanId,
+      status: CycleStatus.EXPIRED,
+    })
+      .sort({ createdAt: -1 }) // Get the most recent expired cycle
+      .session(session);
+
+    // Variables for the new cycle
+    let newPrincipal = principal;
+    let newInterestAmount = interestAmount;
+    let newTotalDue = totalDue;
+    let previousCycleRef = null;
+
+    // If there's a previous expired cycle with a balance, use it as new principal
+    if (previousExpiredCycle && previousExpiredCycle.balance > 0) {
+      newPrincipal = previousExpiredCycle.balance;
+      // Recalculate interest amount based on the new principal
+      newInterestAmount = (newPrincipal * interestRate) / 100;
+      // Recalculate total due
+      newTotalDue = newPrincipal + newInterestAmount;
+      // Store reference to previous cycle
+      previousCycleRef = previousExpiredCycle._id;
+    }
+
     // Auto-calculate derived fields
     const totalPaid = 0; // Initially no payments
-    const balance = totalDue; // Initial balance is total due
-    const profitExpected = interestAmount; // Expected profit is the interest
+    const balance = newTotalDue; // Initial balance is total due
+    const profitExpected = newInterestAmount; // Expected profit is the interest
     const profitEarned = 0; // Initially no profit earned
     const profitRemaining = profitExpected; // Initially all profit remaining
 
@@ -156,10 +181,10 @@ export async function POST(request: NextRequest) {
         {
           loanId,
           cycleCount,
-          principal,
+          principal: newPrincipal,
           interestRate,
-          interestAmount,
-          totalDue,
+          interestAmount: newInterestAmount,
+          totalDue: newTotalDue,
           totalPaid,
           balance,
           profitExpected,
@@ -168,6 +193,7 @@ export async function POST(request: NextRequest) {
           dateDue,
           createdBy: new mongoose.Types.ObjectId(user!.userId),
           status: status || CycleStatus.ACTIVE,
+          previousCycleId: previousCycleRef,
         },
       ],
       { session },
