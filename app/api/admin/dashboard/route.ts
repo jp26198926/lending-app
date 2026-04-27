@@ -47,9 +47,9 @@ export async function GET(request: NextRequest) {
     const cashOnHand = settings?.cashOnHand || 0;
 
     // 2. Get Current User's Withdrawable Cash
-    const currentUserData = await User.findById(new mongoose.Types.ObjectId(user!.userId)).select(
-      "cashWithdrawable",
-    );
+    const currentUserData = await User.findById(
+      new mongoose.Types.ObjectId(user!.userId),
+    ).select("cashWithdrawable");
     const userWithdrawableCash = currentUserData?.cashWithdrawable || 0;
 
     // 3. Total Clients (Active only)
@@ -82,7 +82,11 @@ export async function GET(request: NextRequest) {
         },
       },
     ]);
-    const totalOutstanding = activeCycles[0]?.totalOutstanding || 0;
+    // Convert to number to avoid [object Object] display issue
+    const totalOutstanding =
+      activeCycles.length > 0
+        ? Number(activeCycles[0].totalOutstanding) || 0
+        : 0;
 
     // 7. Collections This Month
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -100,7 +104,11 @@ export async function GET(request: NextRequest) {
         },
       },
     ]);
-    const collectionsThisMonth = paymentsThisMonth[0]?.totalCollections || 0;
+    // Convert to number to avoid [object Object] display issue
+    const collectionsThisMonth =
+      paymentsThisMonth.length > 0
+        ? Number(paymentsThisMonth[0].totalCollections) || 0
+        : 0;
 
     // 8. Overdue Payments Count (Active cycles past due date)
     const overdueCycles = await Cycle.countDocuments({
