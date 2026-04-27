@@ -487,43 +487,47 @@ export default function Dashboard() {
                 <span className="text-sm text-gray-600 mr-2">Period:</span>
                 <button
                   onClick={() => handlePeriodChange("daily")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     selectedPeriod === "daily"
                       ? "bg-zentyal-primary text-white shadow-md"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  Daily
+                  <span className="sm:hidden">D</span>
+                  <span className="hidden sm:inline">Daily</span>
                 </button>
                 <button
                   onClick={() => handlePeriodChange("weekly")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     selectedPeriod === "weekly"
                       ? "bg-zentyal-primary text-white shadow-md"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  Weekly
+                  <span className="sm:hidden">W</span>
+                  <span className="hidden sm:inline">Weekly</span>
                 </button>
                 <button
                   onClick={() => handlePeriodChange("fortnightly")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     selectedPeriod === "fortnightly"
                       ? "bg-zentyal-primary text-white shadow-md"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  Fortnightly
+                  <span className="sm:hidden">F</span>
+                  <span className="hidden sm:inline">Fortnightly</span>
                 </button>
                 <button
                   onClick={() => handlePeriodChange("monthly")}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                     selectedPeriod === "monthly"
                       ? "bg-zentyal-primary text-white shadow-md"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  Monthly
+                  <span className="sm:hidden">M</span>
+                  <span className="hidden sm:inline">Monthly</span>
                 </button>
               </div>
             </div>
