@@ -2,8 +2,8 @@ import mongoose, { Schema, Document } from "mongoose";
 
 // Status enum
 export enum PaymentStatus {
-  COMPLETED = "Completed",
-  CANCELLED = "Cancelled",
+  COMPLETED = "COMPLETED",
+  CANCELLED = "CANCELLED",
 }
 
 // Payment interface

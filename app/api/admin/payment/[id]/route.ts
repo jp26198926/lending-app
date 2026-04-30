@@ -17,6 +17,7 @@ import Ledger, {
 } from "@/models/Ledger";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/User";
+import "@/models/Client";
 
 const PAGE_PATH = "/admin/payment";
 // OPTIONS - Handle CORS preflight
@@ -61,7 +62,11 @@ export async function GET(
     return corsResponse(request, payment, 200);
   } catch (error) {
     console.error("Error fetching payment:", error);
-    return corsErrorResponse(request, { error: "Failed to fetch payment" }, 500);
+    return corsErrorResponse(
+      request,
+      { error: "Failed to fetch payment" },
+      500,
+    );
   }
 }
 
@@ -97,13 +102,21 @@ export async function PUT(
     // Prevent editing cancelled payments
     if (payment.status === PaymentStatus.CANCELLED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Cannot edit a cancelled payment" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Cannot edit a cancelled payment" },
+        403,
+      );
     }
 
     // Validate numeric values if provided
     if (amount !== undefined && amount < 0) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Amount must be a positive number" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Amount must be a positive number" },
+        400,
+      );
     }
 
     // ============================================================
@@ -159,7 +172,11 @@ export async function PUT(
 
       if (!newCycle) {
         await session.abortTransaction();
-        return corsErrorResponse(request, { error: "New cycle not found" }, 404);
+        return corsErrorResponse(
+          request,
+          { error: "New cycle not found" },
+          404,
+        );
       }
 
       // Calculate new cycle totals
@@ -273,7 +290,11 @@ export async function PUT(
 
         if (!settings) {
           await session.abortTransaction();
-          return corsErrorResponse(request, { error: "Settings not found" }, 404);
+          return corsErrorResponse(
+            request,
+            { error: "Settings not found" },
+            404,
+          );
         }
 
         // Calculate the difference: positive = more cash, negative = less cash
@@ -336,13 +357,21 @@ export async function PUT(
 
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
-      return corsErrorResponse(request, { error: "A payment with this payment number already exists" }, 409);
+      return corsErrorResponse(
+        request,
+        { error: "A payment with this payment number already exists" },
+        409,
+      );
     }
 
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to update payment",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }
@@ -368,7 +397,11 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Deletion reason is required" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Deletion reason is required" },
+        400,
+      );
     }
 
     await connectDB();
@@ -383,13 +416,21 @@ export async function DELETE(
     // Prevent deleting already cancelled payments
     if (payment.status === PaymentStatus.CANCELLED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Payment is already cancelled" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Payment is already cancelled" },
+        403,
+      );
     }
 
     // Only completed payments can be cancelled
     if (payment.status !== PaymentStatus.COMPLETED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Only completed payments can be cancelled" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Only completed payments can be cancelled" },
+        403,
+      );
     }
 
     // ============================================================
@@ -567,10 +608,14 @@ export async function DELETE(
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Payment deletion transaction error:", err);
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to delete payment",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }

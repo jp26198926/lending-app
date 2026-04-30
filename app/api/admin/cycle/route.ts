@@ -10,6 +10,7 @@ import Cycle, { CycleStatus } from "@/models/Cycle";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Loan";
 import "@/models/User";
+import "@/models/Client";
 
 const PAGE_PATH = "/admin/cycle";
 // OPTIONS - Handle CORS preflight
@@ -96,26 +97,42 @@ export async function POST(request: NextRequest) {
       !dateDue
     ) {
       await session.abortTransaction();
-      return corsErrorResponse(request, {
+      return corsErrorResponse(
+        request,
+        {
           error:
             "Loan, cycle count, principal, interest rate, interest amount, total due, and due date are required",
-        }, 400);
+        },
+        400,
+      );
     }
 
     // Validate numeric values
     if (principal < 0) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Principal must be a positive number" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Principal must be a positive number" },
+        400,
+      );
     }
 
     if (interestRate < 0) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Interest rate must be a positive number" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Interest rate must be a positive number" },
+        400,
+      );
     }
 
     if (cycleCount < 1) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Cycle count must be at least 1" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Cycle count must be at least 1" },
+        400,
+      );
     }
 
     await connectDB();
@@ -128,10 +145,14 @@ export async function POST(request: NextRequest) {
 
     if (existingActiveCycle) {
       await session.abortTransaction();
-      return corsErrorResponse(request, {
+      return corsErrorResponse(
+        request,
+        {
           error:
             "Cannot create a new cycle. An active cycle already exists for this loan. Please complete or cancel the existing cycle first.",
-        }, 409);
+        },
+        409,
+      );
     }
 
     // Check for previous expired cycle
@@ -210,16 +231,24 @@ export async function POST(request: NextRequest) {
 
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
-      return corsErrorResponse(request, {
+      return corsErrorResponse(
+        request,
+        {
           error:
             "A cycle with this loan and cycle count already exists. Cycle counts are sequential and cannot be reused.",
-        }, 409);
+        },
+        409,
+      );
     }
 
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to create cycle",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }

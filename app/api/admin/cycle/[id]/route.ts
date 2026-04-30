@@ -10,6 +10,7 @@ import Cycle, { CycleStatus } from "@/models/Cycle";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/Loan";
 import "@/models/User";
+import "@/models/Client";
 
 const PAGE_PATH = "/admin/cycle";
 // OPTIONS - Handle CORS preflight
@@ -112,27 +113,43 @@ export async function PUT(
 
       if (existingActiveCycle) {
         await session.abortTransaction();
-        return corsErrorResponse(request, {
+        return corsErrorResponse(
+          request,
+          {
             error:
               "Cannot reactivate this cycle. An active cycle already exists for this loan. Please cancel or complete the existing active cycle first.",
-          }, 409);
+          },
+          409,
+        );
       }
     }
 
     // Validate numeric values if provided
     if (principal !== undefined && principal < 0) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Principal must be a positive number" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Principal must be a positive number" },
+        400,
+      );
     }
 
     if (interestRate !== undefined && interestRate < 0) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Interest rate must be a positive number" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Interest rate must be a positive number" },
+        400,
+      );
     }
 
     if (cycleCount !== undefined && cycleCount < 1) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Cycle count must be at least 1" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Cycle count must be at least 1" },
+        400,
+      );
     }
 
     // Update fields
@@ -177,13 +194,21 @@ export async function PUT(
 
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
-      return corsErrorResponse(request, { error: "A cycle with this loan and cycle count already exists" }, 409);
+      return corsErrorResponse(
+        request,
+        { error: "A cycle with this loan and cycle count already exists" },
+        409,
+      );
     }
 
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to update cycle",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }
@@ -209,7 +234,11 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Deletion reason is required" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Deletion reason is required" },
+        400,
+      );
     }
 
     await connectDB();
@@ -224,13 +253,21 @@ export async function DELETE(
     // Prevent deleting already cancelled cycles
     if (cycle.status === CycleStatus.CANCELLED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Cycle is already cancelled" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Cycle is already cancelled" },
+        403,
+      );
     }
 
     // Only active cycles can be cancelled
     if (cycle.status !== CycleStatus.ACTIVE) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Only active cycles can be cancelled" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Only active cycles can be cancelled" },
+        403,
+      );
     }
 
     // Soft delete
@@ -262,10 +299,14 @@ export async function DELETE(
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Cycle deletion transaction error:", err);
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to delete cycle",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }
@@ -305,10 +346,14 @@ export async function PATCH(
 
     if (existingActiveCycle) {
       await session.abortTransaction();
-      return corsErrorResponse(request, {
+      return corsErrorResponse(
+        request,
+        {
           error:
             "Cannot activate this cycle. An active cycle already exists for this loan. Please cancel or complete the existing active cycle first.",
-        }, 409);
+        },
+        409,
+      );
     }
 
     // Activate cycle
@@ -341,10 +386,14 @@ export async function PATCH(
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Cycle activation transaction error:", err);
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to activate cycle",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }

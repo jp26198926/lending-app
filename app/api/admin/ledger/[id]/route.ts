@@ -17,6 +17,7 @@ import { withAuth } from "@/lib/apiAuth";
 import "@/models/Loan";
 import "@/models/Cycle";
 import "@/models/Payment";
+import "@/models/Client";
 
 const PAGE_PATH = "/admin/ledger";
 // OPTIONS - Handle CORS preflight

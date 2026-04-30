@@ -22,6 +22,7 @@ import UserLedger, {
   UserLedgerStatus,
 } from "@/models/UserLedger";
 import { withAuth } from "@/lib/apiAuth";
+import "@/models/Client";
 
 const PAGE_PATH = "/admin/payment";
 // OPTIONS - Handle CORS preflight
