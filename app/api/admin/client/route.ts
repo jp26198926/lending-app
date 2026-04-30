@@ -1,11 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Client, { ClientStatus } from "@/models/Client";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/User";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/client";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all clients with optional filtering
 export async function GET(request: NextRequest) {
@@ -60,12 +70,13 @@ export async function GET(request: NextRequest) {
       .populate("deletedBy", "firstName lastName email")
       .sort({ createdAt: -1 });
 
-    return NextResponse.json(clients, { status: 200 });
+    return corsResponse(request, clients, 200);
   } catch (error) {
     console.error("Error fetching clients:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch clients" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -87,12 +98,13 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!firstName || !lastName || !phone || !email || !address) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error:
             "First name, last name, phone, email, and address are required",
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -106,9 +118,10 @@ export async function POST(request: NextRequest) {
 
     if (existingClient) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Client with this email already exists" },
-        { status: 409 },
+        409,
       );
     }
 
@@ -136,16 +149,17 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(populatedClient, { status: 201 });
+    return corsResponse(request, populatedClient, 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Client creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create client",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

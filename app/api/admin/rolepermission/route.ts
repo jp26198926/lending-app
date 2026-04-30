@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import RolePermission, { RolePermissionStatus } from "@/models/RolePermission";
@@ -6,8 +6,18 @@ import { withAuth } from "@/lib/apiAuth";
 import "@/models/Role";
 import "@/models/Page";
 import "@/models/Permission";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/rolepermission";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all active role-permission assignments
 export async function GET(request: NextRequest) {
@@ -44,12 +54,13 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json(records);
+    return corsResponse(request, records, 200);
   } catch (error) {
     console.error("Error fetching role-permission assignments:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch role-permission assignments" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -69,9 +80,10 @@ export async function POST(request: NextRequest) {
 
     if (!body.roleId || !body.pageId || !body.permissionId) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Role ID, Page ID, and Permission ID are required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -86,9 +98,10 @@ export async function POST(request: NextRequest) {
 
     if (existingAssignment) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "This role-page-permission assignment already exists" },
-        { status: 409 },
+        409,
       );
     }
 
@@ -114,16 +127,17 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(populatedRecord, { status: 201 });
+    return corsResponse(request, populatedRecord, 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("RolePermission creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create role-permission assignment",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

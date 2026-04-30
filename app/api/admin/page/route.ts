@@ -1,10 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Page, { PageStatus } from "@/models/Page";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/page";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all records (excluding soft deleted)
 export async function GET(request: NextRequest) {
@@ -38,12 +48,13 @@ export async function GET(request: NextRequest) {
     }
 
     const records = await Page.find(filter).sort({ order: 1 }).lean();
-    return NextResponse.json(records);
+    return corsResponse(request, records, 200);
   } catch (error) {
     console.error("Error fetching records:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch records" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -63,9 +74,10 @@ export async function POST(request: NextRequest) {
 
     if (!body.page || !body.path) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Page name and path are required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -78,10 +90,7 @@ export async function POST(request: NextRequest) {
 
     if (existingPage) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Path already exists" },
-        { status: 409 },
-      );
+      return corsErrorResponse(request, { error: "Path already exists" }, 409);
     }
 
     const newRecord = await Page.create(
@@ -99,16 +108,17 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(newRecord[0], { status: 201 });
+    return corsResponse(request, newRecord[0], 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Page creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create record",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

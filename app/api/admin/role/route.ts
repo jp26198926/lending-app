@@ -1,10 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Role, { RoleStatus } from "@/models/Role";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/role";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all active roles
 export async function GET(request: NextRequest) {
@@ -34,13 +44,10 @@ export async function GET(request: NextRequest) {
     }
 
     const records = await Role.find(filter).sort({ createdAt: 1 }).lean();
-    return NextResponse.json(records);
+    return corsResponse(request, records, 200);
   } catch (error) {
     console.error("Error fetching roles:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch roles" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch roles" }, 500);
   }
 }
 
@@ -59,9 +66,10 @@ export async function POST(request: NextRequest) {
 
     if (!body.role || body.role.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Role name is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -74,10 +82,7 @@ export async function POST(request: NextRequest) {
 
     if (existingRole) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Role already exists" },
-        { status: 409 },
-      );
+      return corsErrorResponse(request, { error: "Role already exists" }, 409);
     }
 
     const newRecord = await Role.create(
@@ -93,16 +98,17 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(newRecord[0], { status: 201 });
+    return corsResponse(request, newRecord[0], 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Role creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create role",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import RolePermission, { RolePermissionStatus } from "@/models/RolePermission";
@@ -6,8 +6,18 @@ import { withAuth } from "@/lib/apiAuth";
 import "@/models/Role";
 import "@/models/Page";
 import "@/models/Permission";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/rolepermission";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch single role-permission assignment by ID
 export async function GET(
@@ -32,18 +42,16 @@ export async function GET(
       .lean();
 
     if (!record) {
-      return NextResponse.json(
-        { error: "Assignment not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Assignment not found" }, 404);
     }
 
-    return NextResponse.json(record);
+    return corsResponse(request, record, 200);
   } catch (error) {
     console.error("Error fetching role-permission assignment:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch role-permission assignment" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -73,10 +81,7 @@ export async function PUT(
 
     if (!existingAssignment) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Assignment not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Assignment not found" }, 404);
     }
 
     // Check for duplicate if IDs are being changed
@@ -90,9 +95,10 @@ export async function PUT(
 
       if (duplicateAssignment) {
         await session.abortTransaction();
-        return NextResponse.json(
+        return corsErrorResponse(
+          request,
           { error: "This role-page-permission assignment already exists" },
-          { status: 409 },
+          409,
         );
       }
     }
@@ -115,16 +121,17 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(updatedRecord);
+    return corsResponse(request, updatedRecord, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("RolePermission update transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to update role-permission assignment",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -151,9 +158,10 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Deletion reason is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -164,10 +172,7 @@ export async function DELETE(
 
     if (!existingAssignment) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Assignment not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Assignment not found" }, 404);
     }
 
     existingAssignment.status = RolePermissionStatus.DELETED;
@@ -186,16 +191,17 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(deletedRecord);
+    return corsResponse(request, deletedRecord, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("RolePermission deletion transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to delete role-permission assignment",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -225,10 +231,7 @@ export async function PATCH(
 
     if (!existingAssignment) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Assignment not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Assignment not found" }, 404);
     }
 
     existingAssignment.status = RolePermissionStatus.ACTIVE;
@@ -249,16 +252,17 @@ export async function PATCH(
 
     await session.commitTransaction();
 
-    return NextResponse.json(activatedRecord);
+    return corsResponse(request, activatedRecord, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("RolePermission activation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to activate role-permission assignment",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

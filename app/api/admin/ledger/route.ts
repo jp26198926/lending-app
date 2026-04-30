@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Ledger, { LedgerStatus } from "@/models/Ledger";
@@ -14,6 +19,10 @@ import "@/models/Cycle";
 import "@/models/Payment";
 
 const PAGE_PATH = "/admin/ledger";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all ledger entries with optional filtering
 export async function GET(request: NextRequest) {
@@ -87,12 +96,13 @@ export async function GET(request: NextRequest) {
       .populate("deletedBy", "firstName lastName email")
       .sort({ createdAt: -1 });
 
-    return NextResponse.json(ledgers, { status: 200 });
+    return corsResponse(request, ledgers, 200);
   } catch (error) {
     console.error("Error fetching ledger entries:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch ledger entries" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -125,20 +135,22 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!date || !type || !direction || amount === undefined) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error: "Date, type, direction, and amount are required",
         },
-        { status: 400 },
+        400,
       );
     }
 
     // Validate numeric values
     if (amount < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Amount must be a positive number" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -189,9 +201,10 @@ export async function POST(request: NextRequest) {
 
     if (!settings) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Settings not found. Please configure settings first." },
-        { status: 404 },
+        404,
       );
     }
 
@@ -202,13 +215,14 @@ export async function POST(request: NextRequest) {
     // Prevent negative cash on hand
     if (newCashOnHand < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error: "Insufficient cash on hand. Cannot complete this transaction.",
           currentBalance: settings.cashOnHand,
           requestedAmount: amount,
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -271,7 +285,8 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(
+    return corsResponse(
+      request,
       {
         ...ledger[0].toObject(),
         cashOnHandUpdated: {
@@ -289,17 +304,18 @@ export async function POST(request: NextRequest) {
           },
         }),
       },
-      { status: 201 },
+      201,
     );
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Ledger creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create ledger entry",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

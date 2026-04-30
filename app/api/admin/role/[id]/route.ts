@@ -1,10 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Role, { RoleStatus } from "@/models/Role";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/role";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch single role by ID
 export async function GET(
@@ -25,16 +35,13 @@ export async function GET(
     }).lean();
 
     if (!record) {
-      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Role not found" }, 404);
     }
 
-    return NextResponse.json(record);
+    return corsResponse(request, record, 200);
   } catch (error) {
     console.error("Error fetching role:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch role" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch role" }, 500);
   }
 }
 
@@ -57,9 +64,10 @@ export async function PUT(
 
     if (!body.role || body.role.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Role name is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -70,7 +78,7 @@ export async function PUT(
 
     if (!existingRole) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Role not found" }, 404);
     }
 
     // Check for duplicate (excluding current role)
@@ -81,10 +89,7 @@ export async function PUT(
 
     if (duplicateRole) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Role already exists" },
-        { status: 409 },
-      );
+      return corsErrorResponse(request, { error: "Role already exists" }, 409);
     }
 
     existingRole.role = body.role;
@@ -95,16 +100,17 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(existingRole);
+    return corsResponse(request, existingRole, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Role update transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to update role",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -131,9 +137,10 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Deletion reason is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -143,7 +150,7 @@ export async function DELETE(
 
     if (!existingRole) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Role not found" }, 404);
     }
 
     existingRole.status = RoleStatus.DELETED;
@@ -155,16 +162,17 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(existingRole);
+    return corsResponse(request, existingRole, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Role deletion transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to delete role",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -193,7 +201,7 @@ export async function PATCH(
 
     if (!existingRole) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Role not found" }, 404);
     }
 
     existingRole.status = RoleStatus.ACTIVE;
@@ -207,16 +215,17 @@ export async function PATCH(
 
     await session.commitTransaction();
 
-    return NextResponse.json(existingRole);
+    return corsResponse(request, existingRole, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Role activation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to activate role",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

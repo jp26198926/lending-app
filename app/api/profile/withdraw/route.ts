@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import { getCurrentUser } from "@/lib/auth";
@@ -14,13 +19,19 @@ import Ledger, {
 } from "@/models/Ledger";
 import Settings from "@/models/Settings";
 
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
+
 export async function POST(request: NextRequest) {
   // 1. Authentication check (no permission needed for user's own withdrawal)
-  const currentUser = await getCurrentUser();
+  const currentUser = await getCurrentUser(request);
   if (!currentUser) {
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Authentication required" },
-      { status: 401 },
+      401,
     );
   }
 
@@ -38,9 +49,10 @@ export async function POST(request: NextRequest) {
     // Basic validation
     if (!amount || amount <= 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Valid withdrawal amount is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -55,9 +67,10 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "User not found or inactive" },
-        { status: 404 },
+        404,
       );
     }
 
@@ -65,12 +78,13 @@ export async function POST(request: NextRequest) {
     const currentCashWithdrawable = user.cashWithdrawable || 0;
     if (currentCashWithdrawable < amount) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error: "Insufficient balance",
           details: `Available: ${currentCashWithdrawable.toFixed(2)}, Requested: ${amount.toFixed(2)}`,
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -134,21 +148,19 @@ export async function POST(request: NextRequest) {
 
     if (!settings) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Settings not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Settings not found" }, 404);
     }
 
     // Check if settings has sufficient cashOnHand
     if (settings.cashOnHand < amount) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error: "Insufficient cash on hand in settings",
           details: `Available: ${settings.cashOnHand.toFixed(2)}, Required: ${amount.toFixed(2)}`,
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -174,7 +186,8 @@ export async function POST(request: NextRequest) {
     await session.commitTransaction();
 
     // 13. Return success response
-    return NextResponse.json(
+    return corsResponse(
+      request,
       {
         message: "Withdrawal successful",
         data: {
@@ -185,19 +198,20 @@ export async function POST(request: NextRequest) {
           ledgerId: ledgerEntry[0]._id,
         },
       },
-      { status: 201 },
+      201,
     );
   } catch (err: unknown) {
     // 14. Rollback on error
     await session.abortTransaction();
 
     console.error("Withdrawal transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to process withdrawal",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     // 15. Always end session

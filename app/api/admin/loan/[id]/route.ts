@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Loan, { LoanStatus } from "@/models/Loan";
@@ -8,6 +13,10 @@ import "@/models/Client";
 import "@/models/User";
 
 const PAGE_PATH = "/admin/loan";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch single loan by ID
 export async function GET(
@@ -33,16 +42,13 @@ export async function GET(
       .lean();
 
     if (!loan) {
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Loan not found" }, 404);
     }
 
-    return NextResponse.json(loan, { status: 200 });
+    return corsResponse(request, loan, 200);
   } catch (error) {
     console.error("Error fetching loan:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch loan" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch loan" }, 500);
   }
 }
 
@@ -80,33 +86,24 @@ export async function PUT(
 
     if (!loan) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Loan not found" }, 404);
     }
 
     // Prevent editing cancelled loans
     if (loan.status === LoanStatus.CANCELLED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Cannot edit a cancelled loan" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Cannot edit a cancelled loan" }, 403);
     }
 
     // Validate numeric values if provided
     if (principal !== undefined && principal < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Principal must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Principal must be a positive number" }, 400);
     }
 
     if (interestRate !== undefined && interestRate < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Interest rate must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Interest rate must be a positive number" }, 400);
     }
 
     // Update fields (loanNo cannot be updated - it's auto-generated)
@@ -132,26 +129,20 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(updatedLoan, { status: 200 });
+    return corsResponse(request, updatedLoan, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Loan update transaction error:", err);
 
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
-      return NextResponse.json(
-        { error: "A loan with this loan number already exists" },
-        { status: 409 },
-      );
+      return corsErrorResponse(request, { error: "A loan with this loan number already exists" }, 409);
     }
 
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to update loan",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }
@@ -177,10 +168,7 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Deletion reason is required" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Deletion reason is required" }, 400);
     }
 
     await connectDB();
@@ -189,25 +177,19 @@ export async function DELETE(
 
     if (!loan) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Loan not found" }, 404);
     }
 
     // Prevent deleting already cancelled loans
     if (loan.status === LoanStatus.CANCELLED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Loan is already cancelled" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Loan is already cancelled" }, 403);
     }
 
     // Only active loans can be cancelled
     if (loan.status !== LoanStatus.ACTIVE) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Only active loans can be cancelled" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Only active loans can be cancelled" }, 403);
     }
 
     // Check if loan has any active cycles
@@ -218,13 +200,10 @@ export async function DELETE(
 
     if (activeCycles) {
       await session.abortTransaction();
-      return NextResponse.json(
-        {
+      return corsErrorResponse(request, {
           error:
             "Cannot delete this loan because it has active cycles. Please complete or cancel all active cycles first.",
-        },
-        { status: 403 },
-      );
+        }, 403);
     }
 
     // Soft delete
@@ -246,17 +225,14 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(deletedLoan, { status: 200 });
+    return corsResponse(request, deletedLoan, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Loan deletion transaction error:", err);
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to delete loan",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }
@@ -284,7 +260,7 @@ export async function PATCH(
 
     if (!loan) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Loan not found" }, 404);
     }
 
     // Activate the loan
@@ -307,17 +283,14 @@ export async function PATCH(
 
     await session.commitTransaction();
 
-    return NextResponse.json(activatedLoan, { status: 200 });
+    return corsResponse(request, activatedLoan, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Loan activation transaction error:", err);
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to activate loan",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }

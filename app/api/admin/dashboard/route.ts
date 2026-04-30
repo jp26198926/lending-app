@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import User from "@/models/User";
 import Client from "@/models/Client";
 import Loan from "@/models/Loan";
@@ -10,6 +15,11 @@ import Payment from "@/models/Payment";
 import Settings from "@/models/Settings";
 
 const PAGE_PATH = "/admin/dashboard";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 export async function GET(request: NextRequest) {
   // Security check
@@ -208,43 +218,48 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Return all dashboard data
-    return NextResponse.json({
-      success: true,
-      data: {
-        // Primary Metrics
-        cashOnHand,
-        userWithdrawableCash,
-        totalClients,
-        totalStaffs,
+    return corsResponse(
+      request,
+      {
+        success: true,
+        data: {
+          // Primary Metrics
+          cashOnHand,
+          userWithdrawableCash,
+          totalClients,
+          totalStaffs,
 
-        // Secondary Metrics
-        activeLoans,
-        totalOutstanding,
-        collectionsThisMonth,
-        overdueCycles,
+          // Secondary Metrics
+          activeLoans,
+          totalOutstanding,
+          collectionsThisMonth,
+          overdueCycles,
 
-        // Analytics
-        paymentCollections: analyticsData,
-        loanDisbursements: disbursementData,
-        recentActivities,
-        loanStatusDistribution,
+          // Analytics
+          paymentCollections: analyticsData,
+          loanDisbursements: disbursementData,
+          recentActivities,
+          loanStatusDistribution,
 
-        // Metadata
-        period,
-        dateRange: {
-          start: startDate.toISOString(),
-          end: now.toISOString(),
+          // Metadata
+          period,
+          dateRange: {
+            start: startDate.toISOString(),
+            end: now.toISOString(),
+          },
         },
       },
-    });
+      200,
+    );
   } catch (err: unknown) {
     console.error("Dashboard data fetch error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to fetch dashboard data",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   }
 }

@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Cycle, { CycleStatus } from "@/models/Cycle";
@@ -7,6 +12,10 @@ import "@/models/Loan";
 import "@/models/User";
 
 const PAGE_PATH = "/admin/cycle";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all cycles with optional filtering
 export async function GET(request: NextRequest) {
@@ -46,13 +55,10 @@ export async function GET(request: NextRequest) {
       .populate("deletedBy", "firstName lastName email")
       .sort({ dateDue: 1, cycleCount: 1 });
 
-    return NextResponse.json(cycles, { status: 200 });
+    return corsResponse(request, cycles, 200);
   } catch (error) {
     console.error("Error fetching cycles:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch cycles" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch cycles" }, 500);
   }
 }
 
@@ -90,38 +96,26 @@ export async function POST(request: NextRequest) {
       !dateDue
     ) {
       await session.abortTransaction();
-      return NextResponse.json(
-        {
+      return corsErrorResponse(request, {
           error:
             "Loan, cycle count, principal, interest rate, interest amount, total due, and due date are required",
-        },
-        { status: 400 },
-      );
+        }, 400);
     }
 
     // Validate numeric values
     if (principal < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Principal must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Principal must be a positive number" }, 400);
     }
 
     if (interestRate < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Interest rate must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Interest rate must be a positive number" }, 400);
     }
 
     if (cycleCount < 1) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Cycle count must be at least 1" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Cycle count must be at least 1" }, 400);
     }
 
     await connectDB();
@@ -134,13 +128,10 @@ export async function POST(request: NextRequest) {
 
     if (existingActiveCycle) {
       await session.abortTransaction();
-      return NextResponse.json(
-        {
+      return corsErrorResponse(request, {
           error:
             "Cannot create a new cycle. An active cycle already exists for this loan. Please complete or cancel the existing cycle first.",
-        },
-        { status: 409 },
-      );
+        }, 409);
     }
 
     // Check for previous expired cycle
@@ -212,29 +203,23 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(cycle[0], { status: 201 });
+    return corsResponse(request, cycle[0], 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Cycle creation transaction error:", err);
 
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
-      return NextResponse.json(
-        {
+      return corsErrorResponse(request, {
           error:
             "A cycle with this loan and cycle count already exists. Cycle counts are sequential and cannot be reused.",
-        },
-        { status: 409 },
-      );
+        }, 409);
     }
 
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to create cycle",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }

@@ -1,11 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import User, { UserStatus } from "@/models/User";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import "@/models/Role";
 
 const PAGE_PATH = "/admin/user";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch single user by ID
 export async function GET(
@@ -31,16 +41,13 @@ export async function GET(
       .lean();
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "User not found" }, 404);
     }
 
-    return NextResponse.json(user, { status: 200 });
+    return corsResponse(request, user, 200);
   } catch (error) {
     console.error("Error fetching user:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch user" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch user" }, 500);
   }
 }
 
@@ -83,7 +90,7 @@ export async function PUT(
 
     if (!existingUser) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "User not found" }, 404);
     }
 
     // Check if email is being changed and if it conflicts with another user
@@ -96,9 +103,10 @@ export async function PUT(
 
       if (duplicateUser) {
         await session.abortTransaction();
-        return NextResponse.json(
+        return corsErrorResponse(
+          request,
           { error: "User with this email already exists" },
-          { status: 409 },
+          409,
         );
       }
     }
@@ -134,16 +142,17 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(updatedUser, { status: 200 });
+    return corsResponse(request, updatedUser, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User update transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to update user",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -170,9 +179,10 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Deletion reason is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -182,7 +192,7 @@ export async function DELETE(
 
     if (!existingUser) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "User not found" }, 404);
     }
 
     // Soft delete
@@ -204,16 +214,17 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(deletedUser, { status: 200 });
+    return corsResponse(request, deletedUser, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User deletion transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to delete user",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -242,7 +253,7 @@ export async function PATCH(
 
     if (!existingUser) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "User not found" }, 404);
     }
 
     // Activate the user
@@ -265,16 +276,17 @@ export async function PATCH(
 
     await session.commitTransaction();
 
-    return NextResponse.json(activatedUser, { status: 200 });
+    return corsResponse(request, activatedUser, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User activation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to activate user",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

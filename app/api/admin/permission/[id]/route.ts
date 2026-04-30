@@ -1,10 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/mongodb";
 import Permission, { PermissionStatus } from "@/models/Permission";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/permission";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch single permission by ID
 export async function GET(
@@ -25,18 +35,16 @@ export async function GET(
     }).lean();
 
     if (!record) {
-      return NextResponse.json(
-        { error: "Permission not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Permission not found" }, 404);
     }
 
-    return NextResponse.json(record);
+    return corsResponse(request, record, 200);
   } catch (error) {
     console.error("Error fetching permission:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch permission" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -60,9 +68,10 @@ export async function PUT(
 
     if (!body.permission || body.permission.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Permission name is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -73,10 +82,7 @@ export async function PUT(
 
     if (!existingPermission) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Permission not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Permission not found" }, 404);
     }
 
     // Check for duplicate (excluding current permission)
@@ -87,9 +93,10 @@ export async function PUT(
 
     if (duplicatePermission) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Permission already exists" },
-        { status: 409 },
+        409,
       );
     }
 
@@ -100,16 +107,17 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(existingPermission);
+    return corsResponse(request, existingPermission, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Permission update transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to update permission",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -136,9 +144,10 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Deletion reason is required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -148,10 +157,7 @@ export async function DELETE(
 
     if (!existingPermission) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Permission not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Permission not found" }, 404);
     }
 
     existingPermission.status = PermissionStatus.DELETED;
@@ -163,16 +169,17 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(existingPermission);
+    return corsResponse(request, existingPermission, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Permission deletion transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to delete permission",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();
@@ -201,10 +208,7 @@ export async function PATCH(
 
     if (!existingPermission) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Permission not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Permission not found" }, 404);
     }
 
     existingPermission.status = PermissionStatus.ACTIVE;
@@ -217,16 +221,17 @@ export async function PATCH(
 
     await session.commitTransaction();
 
-    return NextResponse.json(existingPermission);
+    return corsResponse(request, existingPermission, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Permission activation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to activate permission",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

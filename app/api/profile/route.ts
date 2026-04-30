@@ -1,7 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/User";
 import { getCurrentUser } from "@/lib/auth";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 /**
  * GET /api/profile
@@ -10,13 +20,14 @@ import { getCurrentUser } from "@/lib/auth";
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get current user from token
-    const currentUser = await getCurrentUser();
+    // Get current user from token (cookie for web, Authorization header for mobile)
+    const currentUser = await getCurrentUser(request);
 
     if (!currentUser) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Unauthorized - Please log in" },
-        { status: 401 },
+        401,
       );
     }
 
@@ -33,24 +44,30 @@ export async function GET(request: NextRequest) {
       .lean();
 
     if (!user) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "User not found or inactive" },
-        { status: 404 },
+        404,
       );
     }
 
-    return NextResponse.json({
-      message: "Profile retrieved successfully",
-      data: user,
-    });
+    return corsResponse(
+      request,
+      {
+        message: "Profile retrieved successfully",
+        data: user,
+      },
+      200,
+    );
   } catch (err: unknown) {
     console.error("Profile fetch error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to fetch profile",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   }
 }

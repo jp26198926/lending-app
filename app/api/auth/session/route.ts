@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/User";
@@ -6,17 +6,25 @@ import RolePermission, { RolePermissionStatus } from "@/models/RolePermission";
 import "@/models/Role";
 import "@/models/Page";
 import "@/models/Permission";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Check current session
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const tokenPayload = await getCurrentUser();
+    // Support both cookie (web) and Bearer token (mobile) authentication
+    const tokenPayload = await getCurrentUser(request);
 
     if (!tokenPayload) {
-      return NextResponse.json(
-        { authenticated: false, user: null },
-        { status: 401 },
-      );
+      return corsResponse(request, { authenticated: false, user: null }, 401);
     }
 
     // Fetch full user details from database
@@ -26,10 +34,7 @@ export async function GET() {
       .select("-password");
 
     if (!user) {
-      return NextResponse.json(
-        { authenticated: false, user: null },
-        { status: 401 },
-      );
+      return corsResponse(request, { authenticated: false, user: null }, 401);
     }
 
     // Fetch role permissions for this user's role
@@ -73,7 +78,8 @@ export async function GET() {
     // Convert to array format
     const userPermissions = Object.values(permissionsByPage);
 
-    return NextResponse.json(
+    return corsResponse(
+      request,
       {
         authenticated: true,
         user: {
@@ -87,13 +93,10 @@ export async function GET() {
         },
         permissions: userPermissions,
       },
-      { status: 200 },
+      200,
     );
   } catch (error) {
     console.error("Session check error:", error);
-    return NextResponse.json(
-      { authenticated: false, user: null },
-      { status: 500 },
-    );
+    return corsResponse(request, { authenticated: false, user: null }, 500);
   }
 }

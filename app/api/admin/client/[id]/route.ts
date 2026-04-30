@@ -1,11 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Client, { ClientStatus } from "@/models/Client";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/User";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/client";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch single client by ID
 export async function GET(
@@ -29,16 +39,13 @@ export async function GET(
       .lean();
 
     if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Client not found" }, 404);
     }
 
-    return NextResponse.json(client, { status: 200 });
+    return corsResponse(request, client, 200);
   } catch (error) {
     console.error("Error fetching client:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch client" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch client" }, 500);
   }
 }
 
@@ -51,24 +58,26 @@ export async function PUT(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
-  const session = await mongoose.startSession();
-
   try {
-    await session.startTransaction();
-
     const { id } = await params;
     const body = await request.json();
 
     const { firstName, middleName, lastName, phone, email, address } = body;
 
+    // Connect to database first
     await connectDB();
+
+    // Start session AFTER database connection
+    const session = await mongoose.startSession();
+    await session.startTransaction();
 
     // Find the client
     const client = await Client.findById(id).session(session);
 
     if (!client) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      await session.endSession();
+      return corsErrorResponse(request, { error: "Client not found" }, 404);
     }
 
     // Check if email is being changed and if it conflicts with another client
@@ -81,9 +90,11 @@ export async function PUT(
 
       if (existingClient) {
         await session.abortTransaction();
-        return NextResponse.json(
+        await session.endSession();
+        return corsErrorResponse(
+          request,
           { error: "Client with this email already exists" },
-          { status: 409 },
+          409,
         );
       }
     }
@@ -108,20 +119,19 @@ export async function PUT(
       .session(session);
 
     await session.commitTransaction();
+    await session.endSession();
 
-    return NextResponse.json(updatedClient, { status: 200 });
+    return corsResponse(request, updatedClient, 200);
   } catch (err: unknown) {
-    await session.abortTransaction();
     console.error("Client update transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to update client",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
-  } finally {
-    await session.endSession();
   }
 }
 
@@ -134,30 +144,32 @@ export async function DELETE(
   const { user, error } = await withAuth(request, PAGE_PATH);
   if (error) return error;
 
-  const session = await mongoose.startSession();
-
   try {
-    await session.startTransaction();
-
     const { id } = await params;
     const body = await request.json();
     const { reason } = body;
 
     if (!reason || reason.trim() === "") {
-      await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Deletion reason is required" },
-        { status: 400 },
+        400,
       );
     }
 
+    // Connect to database first
     await connectDB();
+
+    // Start session AFTER database connection
+    const session = await mongoose.startSession();
+    await session.startTransaction();
 
     const client = await Client.findById(id).session(session);
 
     if (!client) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      await session.endSession();
+      return corsErrorResponse(request, { error: "Client not found" }, 404);
     }
 
     // Soft delete
@@ -176,20 +188,19 @@ export async function DELETE(
       .session(session);
 
     await session.commitTransaction();
+    await session.endSession();
 
-    return NextResponse.json(deletedClient, { status: 200 });
+    return corsResponse(request, deletedClient, 200);
   } catch (err: unknown) {
-    await session.abortTransaction();
     console.error("Client deletion transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to delete client",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
-  } finally {
-    await session.endSession();
   }
 }
 
@@ -202,20 +213,22 @@ export async function PATCH(
   const { user, error } = await withAuth(request, PAGE_PATH, "Edit");
   if (error) return error;
 
-  const session = await mongoose.startSession();
-
   try {
-    await session.startTransaction();
-
     const { id } = await params;
 
+    // Connect to database first
     await connectDB();
+
+    // Start session AFTER database connection
+    const session = await mongoose.startSession();
+    await session.startTransaction();
 
     const client = await Client.findById(id).session(session);
 
     if (!client) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      await session.endSession();
+      return corsErrorResponse(request, { error: "Client not found" }, 404);
     }
 
     // Activate the client
@@ -235,19 +248,18 @@ export async function PATCH(
       .session(session);
 
     await session.commitTransaction();
+    await session.endSession();
 
-    return NextResponse.json(activatedClient, { status: 200 });
+    return corsResponse(request, activatedClient, 200);
   } catch (err: unknown) {
-    await session.abortTransaction();
     console.error("Client activation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to activate client",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
-  } finally {
-    await session.endSession();
   }
 }

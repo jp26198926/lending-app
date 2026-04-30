@@ -1,11 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import User, { UserStatus } from "@/models/User";
 import { withAuth } from "@/lib/apiAuth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import "@/models/Role";
 
 const PAGE_PATH = "/admin/user";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all users with optional filtering
 export async function GET(request: NextRequest) {
@@ -63,13 +73,10 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .select("-password"); // Exclude password from response
 
-    return NextResponse.json(users, { status: 200 });
+    return corsResponse(request, users, 200);
   } catch (error) {
     console.error("Error fetching users:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch users" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch users" }, 500);
   }
 }
 
@@ -103,12 +110,13 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!email || !password || !firstName || !lastName || !phone || !roleId) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error:
             "Email, password, firstName, lastName, phone, and roleId are required",
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -122,9 +130,10 @@ export async function POST(request: NextRequest) {
 
     if (existingUser) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "User with this email already exists" },
-        { status: 409 },
+        409,
       );
     }
 
@@ -159,16 +168,17 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(populatedUser, { status: 201 });
+    return corsResponse(request, populatedUser, 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create user",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

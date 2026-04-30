@@ -1,11 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Settings from "@/models/Settings";
 import { withAuth } from "@/lib/apiAuth";
 import "@/models/User";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 
 const PAGE_PATH = "/admin/settings";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch application settings (singleton)
 export async function GET(request: NextRequest) {
@@ -36,12 +46,13 @@ export async function GET(request: NextRequest) {
       await settings.populate("updatedBy", "firstName lastName email");
     }
 
-    return NextResponse.json(settings, { status: 200 });
+    return corsResponse(request, settings, 200);
   } catch (error) {
     console.error("Error fetching settings:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch settings" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -63,18 +74,20 @@ export async function PUT(request: NextRequest) {
     // Validate required fields
     if (!name) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Application name is required" },
-        { status: 400 },
+        400,
       );
     }
 
     // Validate numeric values
     if (cashOnHand !== undefined && cashOnHand < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Cash on hand cannot be negative" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -103,7 +116,7 @@ export async function PUT(request: NextRequest) {
       await newSettings[0].populate("updatedBy", "firstName lastName email");
 
       await session.commitTransaction();
-      return NextResponse.json(newSettings[0], { status: 200 });
+      return corsResponse(request, newSettings[0], 200);
     }
 
     // Update existing settings
@@ -124,17 +137,18 @@ export async function PUT(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(updatedSettings, { status: 200 });
+    return corsResponse(request, updatedSettings, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Settings update transaction error:", err);
 
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to update settings",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

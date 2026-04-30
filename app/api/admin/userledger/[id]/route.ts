@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import UserLedger, { UserLedgerStatus } from "@/models/UserLedger";
@@ -7,6 +12,10 @@ import "@/models/User";
 import "@/models/Loan";
 
 const PAGE_PATH = "/admin/userledger";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch a single user ledger by ID
 export async function GET(
@@ -39,19 +48,13 @@ export async function GET(
       .populate("deletedBy", "firstName lastName email");
 
     if (!userLedger) {
-      return NextResponse.json(
-        { error: "User ledger not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "User ledger not found" }, 404);
     }
 
-    return NextResponse.json(userLedger, { status: 200 });
+    return corsResponse(request, userLedger, 200);
   } catch (error) {
     console.error("Error fetching user ledger:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch user ledger" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch user ledger" }, 500);
   }
 }
 
@@ -81,28 +84,19 @@ export async function PUT(
 
     if (!userLedger) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "User ledger not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "User ledger not found" }, 404);
     }
 
     // Prevent editing cancelled entries
     if (userLedger.status === UserLedgerStatus.CANCELLED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Cannot edit a cancelled user ledger entry" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Cannot edit a cancelled user ledger entry" }, 403);
     }
 
     // Validate numeric values if provided
     if (amount !== undefined && amount < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Amount must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Amount must be a positive number" }, 400);
     }
 
     // Update fields
@@ -137,18 +131,15 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(updatedUserLedger, { status: 200 });
+    return corsResponse(request, updatedUserLedger, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User ledger update transaction error:", err);
 
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to update user ledger",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }
@@ -174,10 +165,7 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Deletion reason is required" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Deletion reason is required" }, 400);
     }
 
     await connectDB();
@@ -186,28 +174,19 @@ export async function DELETE(
 
     if (!userLedger) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "User ledger not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "User ledger not found" }, 404);
     }
 
     // Prevent deleting already cancelled entries
     if (userLedger.status === UserLedgerStatus.CANCELLED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "User ledger entry is already cancelled" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "User ledger entry is already cancelled" }, 403);
     }
 
     // Only completed entries can be cancelled
     if (userLedger.status !== UserLedgerStatus.COMPLETED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Only completed entries can be cancelled" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Only completed entries can be cancelled" }, 403);
     }
 
     // Soft delete (cancel)
@@ -239,17 +218,14 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(deletedUserLedger, { status: 200 });
+    return corsResponse(request, deletedUserLedger, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User ledger deletion transaction error:", err);
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to delete user ledger",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }

@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Loan, { LoanStatus, LoanTerms } from "@/models/Loan";
@@ -14,6 +19,10 @@ import "@/models/Client";
 import "@/models/User";
 
 const PAGE_PATH = "/admin/loan";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // Calculate due date based on loan terms
 function calculateDueDate(dateStarted: Date, terms: LoanTerms): Date {
@@ -124,13 +133,10 @@ export async function GET(request: NextRequest) {
       .populate("deletedBy", "firstName lastName email")
       .sort({ createdAt: -1 });
 
-    return NextResponse.json(loans, { status: 200 });
+    return corsResponse(request, loans, 200);
   } catch (error) {
     console.error("Error fetching loans:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch loans" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch loans" }, 500);
   }
 }
 
@@ -166,29 +172,32 @@ export async function POST(request: NextRequest) {
       !assignedStaff
     ) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error:
             "Client, principal, interest rate, terms, date started, and assigned staff are required",
         },
-        { status: 400 },
+        400,
       );
     }
 
     // Validate numeric values
     if (principal < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Principal must be a positive number" },
-        { status: 400 },
+        400,
       );
     }
 
     if (interestRate < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Interest rate must be a positive number" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -200,23 +209,25 @@ export async function POST(request: NextRequest) {
 
     if (!settings) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error:
             "Settings not found. Please configure application settings first.",
         },
-        { status: 404 },
+        404,
       );
     }
 
     // Validate if loan amount exceeds available cash
     if (principal > settings.cashOnHand) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error: `Insufficient cash on hand. Available: ₱${settings.cashOnHand.toLocaleString()}, Required: ₱${principal.toLocaleString()}`,
         },
-        { status: 400 },
+        400,
       );
     }
 
@@ -343,25 +354,27 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(loan[0], { status: 201 });
+    return corsResponse(request, loan[0], 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Loan creation transaction error:", err);
 
     // Handle duplicate key error (if any unique constraints exist)
     if ((err as { code?: number }).code === 11000) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "A loan with this loan number already exists" },
-        { status: 409 },
+        409,
       );
     }
 
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create loan",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

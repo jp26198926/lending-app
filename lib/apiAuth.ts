@@ -6,6 +6,7 @@ import RolePermission, { RolePermissionStatus } from "@/models/RolePermission";
 import "@/models/Role";
 import "@/models/Page";
 import "@/models/Permission";
+import { corsErrorResponse } from "@/lib/cors";
 
 export interface AuthenticatedUser {
   userId: string;
@@ -21,9 +22,10 @@ export interface ApiAuthResult {
 
 /**
  * Check if user is authenticated
+ * Supports both cookie-based (web) and Bearer token (mobile) authentication
  */
-export async function checkAuth(): Promise<ApiAuthResult> {
-  const tokenPayload = await getCurrentUser();
+export async function checkAuth(request?: NextRequest): Promise<ApiAuthResult> {
+  const tokenPayload = await getCurrentUser(request);
 
   if (!tokenPayload) {
     return {
@@ -118,14 +120,15 @@ export async function requireAuth(
   pagePath: string,
   permissionName: string,
 ): Promise<{ user?: AuthenticatedUser; error?: NextResponse }> {
-  // Check authentication
-  const authResult = await checkAuth();
+  // Check authentication (supports both cookie and Bearer token)
+  const authResult = await checkAuth(request);
 
   if (!authResult.isValid || !authResult.user) {
     return {
-      error: NextResponse.json(
+      error: corsErrorResponse(
+        request,
         { error: authResult.error?.message || "Unauthorized" },
-        { status: authResult.error?.status || 401 },
+        authResult.error?.status || 401,
       ),
     };
   }
@@ -139,11 +142,12 @@ export async function requireAuth(
 
   if (!hasPermission) {
     return {
-      error: NextResponse.json(
+      error: corsErrorResponse(
+        request,
         {
           error: `Access denied. You do not have ${permissionName} permission for this resource.`,
         },
-        { status: 403 },
+        403,
       ),
     };
   }

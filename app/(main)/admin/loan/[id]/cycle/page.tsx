@@ -611,7 +611,7 @@ export default function LoanCyclesPage() {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          deletedReason: reason || "Deleted by user",
+          reason: reason || "Deleted by user",
         }),
       });
 

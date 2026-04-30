@@ -1,8 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/User";
 import { checkAuth } from "@/lib/apiAuth";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // POST - Change user password
 export async function POST(
@@ -13,9 +23,10 @@ export async function POST(
   const authResult = await checkAuth();
 
   if (!authResult.isValid || !authResult.user) {
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: authResult.error?.message || "Unauthorized" },
-      { status: authResult.error?.status || 401 },
+      authResult.error?.status || 401,
     );
   }
 
@@ -32,17 +43,19 @@ export async function POST(
     // Validate input - newPassword is required, oldPassword is optional (for admin override)
     if (!newPassword) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "New password is required" },
-        { status: 400 },
+        400,
       );
     }
 
     if (newPassword.length < 6) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "New password must be at least 6 characters long" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -53,7 +66,7 @@ export async function POST(
 
     if (!user) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "User not found" }, 404);
     }
 
     // Verify old password only if provided
@@ -62,9 +75,10 @@ export async function POST(
 
       if (!isPasswordValid) {
         await session.abortTransaction();
-        return NextResponse.json(
+        return corsErrorResponse(
+          request,
           { error: "Current password is incorrect" },
-          { status: 401 },
+          401,
         );
       }
     }
@@ -78,19 +92,21 @@ export async function POST(
 
     await session.commitTransaction();
 
-    return NextResponse.json(
+    return corsResponse(
+      request,
       { message: "Password changed successfully" },
-      { status: 200 },
+      200,
     );
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Password change transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to change password",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import UserLedger, { UserLedgerStatus } from "@/models/UserLedger";
@@ -7,6 +12,10 @@ import "@/models/User";
 import "@/models/Loan";
 
 const PAGE_PATH = "/admin/userledger";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all user ledgers with optional filtering
 export async function GET(request: NextRequest) {
@@ -50,13 +59,10 @@ export async function GET(request: NextRequest) {
       .populate("deletedBy", "firstName lastName email")
       .sort({ date: -1, createdAt: -1 });
 
-    return NextResponse.json(userLedgers, { status: 200 });
+    return corsResponse(request, userLedgers, 200);
   } catch (error) {
     console.error("Error fetching user ledgers:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch user ledgers" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch user ledgers" }, 500);
   }
 }
 
@@ -77,21 +83,15 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!date || amount === undefined || !type || !userId) {
       await session.abortTransaction();
-      return NextResponse.json(
-        {
+      return corsErrorResponse(request, {
           error: "Date, amount, type, and user are required",
-        },
-        { status: 400 },
-      );
+        }, 400);
     }
 
     // Validate numeric values
     if (amount < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Amount must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Amount must be a positive number" }, 400);
     }
 
     await connectDB();
@@ -122,17 +122,14 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(userLedger[0], { status: 201 });
+    return corsResponse(request, userLedger[0], 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("User ledger creation transaction error:", err);
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to create user ledger",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }

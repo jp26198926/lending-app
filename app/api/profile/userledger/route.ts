@@ -1,9 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import connectDB from "@/lib/mongodb";
 import UserLedger from "@/models/UserLedger";
 import { getCurrentUser } from "@/lib/auth";
 import "@/models/User";
 import "@/models/Loan";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 /**
  * GET /api/profile/userledger
@@ -13,13 +23,14 @@ import "@/models/Loan";
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get current user from token
-    const currentUser = await getCurrentUser();
+    // Get current user from token (cookie for web, Authorization header for mobile)
+    const currentUser = await getCurrentUser(request);
 
     if (!currentUser) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Unauthorized - Please log in" },
-        { status: 401 },
+        401,
       );
     }
 
@@ -51,15 +62,16 @@ export async function GET(request: NextRequest) {
       .populate("updatedBy", "firstName lastName email")
       .sort({ date: -1, createdAt: -1 });
 
-    return NextResponse.json(userLedgers, { status: 200 });
+    return corsResponse(request, userLedgers, 200);
   } catch (err: unknown) {
     console.error("User ledger fetch error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to fetch user ledgers",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   }
 }

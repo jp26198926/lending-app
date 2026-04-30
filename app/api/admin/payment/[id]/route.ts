@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Payment, { PaymentStatus } from "@/models/Payment";
@@ -14,6 +19,10 @@ import { withAuth } from "@/lib/apiAuth";
 import "@/models/User";
 
 const PAGE_PATH = "/admin/payment";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch a single payment by ID
 export async function GET(
@@ -46,16 +55,13 @@ export async function GET(
       .populate("deletedBy", "firstName lastName email");
 
     if (!payment) {
-      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Payment not found" }, 404);
     }
 
-    return NextResponse.json(payment, { status: 200 });
+    return corsResponse(request, payment, 200);
   } catch (error) {
     console.error("Error fetching payment:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch payment" },
-      { status: 500 },
-    );
+    return corsErrorResponse(request, { error: "Failed to fetch payment" }, 500);
   }
 }
 
@@ -85,25 +91,19 @@ export async function PUT(
 
     if (!payment) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Payment not found" }, 404);
     }
 
     // Prevent editing cancelled payments
     if (payment.status === PaymentStatus.CANCELLED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Cannot edit a cancelled payment" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Cannot edit a cancelled payment" }, 403);
     }
 
     // Validate numeric values if provided
     if (amount !== undefined && amount < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Amount must be a positive number" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Amount must be a positive number" }, 400);
     }
 
     // ============================================================
@@ -159,10 +159,7 @@ export async function PUT(
 
       if (!newCycle) {
         await session.abortTransaction();
-        return NextResponse.json(
-          { error: "New cycle not found" },
-          { status: 404 },
-        );
+        return corsErrorResponse(request, { error: "New cycle not found" }, 404);
       }
 
       // Calculate new cycle totals
@@ -276,10 +273,7 @@ export async function PUT(
 
         if (!settings) {
           await session.abortTransaction();
-          return NextResponse.json(
-            { error: "Settings not found" },
-            { status: 404 },
-          );
+          return corsErrorResponse(request, { error: "Settings not found" }, 404);
         }
 
         // Calculate the difference: positive = more cash, negative = less cash
@@ -335,26 +329,20 @@ export async function PUT(
 
     await session.commitTransaction();
 
-    return NextResponse.json(updatedPayment, { status: 200 });
+    return corsResponse(request, updatedPayment, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Payment update transaction error:", err);
 
     // Handle duplicate key error
     if ((err as { code?: number }).code === 11000) {
-      return NextResponse.json(
-        { error: "A payment with this payment number already exists" },
-        { status: 409 },
-      );
+      return corsErrorResponse(request, { error: "A payment with this payment number already exists" }, 409);
     }
 
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to update payment",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }
@@ -380,10 +368,7 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Deletion reason is required" },
-        { status: 400 },
-      );
+      return corsErrorResponse(request, { error: "Deletion reason is required" }, 400);
     }
 
     await connectDB();
@@ -392,25 +377,19 @@ export async function DELETE(
 
     if (!payment) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Payment not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Payment not found" }, 404);
     }
 
     // Prevent deleting already cancelled payments
     if (payment.status === PaymentStatus.CANCELLED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Payment is already cancelled" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Payment is already cancelled" }, 403);
     }
 
     // Only completed payments can be cancelled
     if (payment.status !== PaymentStatus.COMPLETED) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Only completed payments can be cancelled" },
-        { status: 403 },
-      );
+      return corsErrorResponse(request, { error: "Only completed payments can be cancelled" }, 403);
     }
 
     // ============================================================
@@ -536,10 +515,7 @@ export async function DELETE(
 
     if (!settings) {
       await session.abortTransaction();
-      return NextResponse.json(
-        { error: "Settings not found" },
-        { status: 404 },
-      );
+      return corsErrorResponse(request, { error: "Settings not found" }, 404);
     }
 
     await Settings.findByIdAndUpdate(
@@ -587,17 +563,14 @@ export async function DELETE(
 
     await session.commitTransaction();
 
-    return NextResponse.json(deletedPayment, { status: 200 });
+    return corsResponse(request, deletedPayment, 200);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Payment deletion transaction error:", err);
-    return NextResponse.json(
-      {
+    return corsErrorResponse(request, {
         error: "Failed to delete payment",
         details: err instanceof Error ? err.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+      }, 500);
   } finally {
     await session.endSession();
   }

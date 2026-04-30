@@ -2,3 +2,11 @@ MONGODB_URI=
 JWT_SECRET=
 JWT_EXPIRES_IN=
 CRON_SECRET=
+
+# CORS Configuration - Comma-separated list of allowed frontend origins
+
+# Add all your frontend URLs here (development, staging, production)
+
+# Example: http://localhost:3000,http://localhost:8081,https://app.example.com,https://mobile.example.com
+
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8081

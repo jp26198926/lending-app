@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Payment, { PaymentStatus } from "@/models/Payment";
@@ -19,6 +24,10 @@ import UserLedger, {
 import { withAuth } from "@/lib/apiAuth";
 
 const PAGE_PATH = "/admin/payment";
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // GET - Fetch all payments with optional filtering
 export async function GET(request: NextRequest) {
@@ -67,12 +76,13 @@ export async function GET(request: NextRequest) {
       .populate("deletedBy", "firstName lastName email")
       .sort({ datePaid: -1, createdAt: -1 });
 
-    return NextResponse.json(payments, { status: 200 });
+    return corsResponse(request, payments, 200);
   } catch (error) {
     console.error("Error fetching payments:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Failed to fetch payments" },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -94,20 +104,22 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!loanId || !cycleId || amount === undefined || !datePaid) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error: "Loan, cycle, amount, and date paid are required",
         },
-        { status: 400 },
+        400,
       );
     }
 
     // Validate numeric values
     if (amount < 0) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Amount must be a positive number" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -153,7 +165,7 @@ export async function POST(request: NextRequest) {
 
     if (!cycle) {
       await session.abortTransaction();
-      return NextResponse.json({ error: "Cycle not found" }, { status: 404 });
+      return corsErrorResponse(request, { error: "Cycle not found" }, 404);
     }
 
     // Calculate new totals
@@ -218,12 +230,13 @@ export async function POST(request: NextRequest) {
 
     if (!settings) {
       await session.abortTransaction();
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         {
           error:
             "Settings not found. Please configure application settings first.",
         },
-        { status: 404 },
+        404,
       );
     }
 
@@ -245,19 +258,32 @@ export async function POST(request: NextRequest) {
     // STEP 3: Check if loan should be marked as COMPLETED
     // ============================================================
     if (newBalance <= 0) {
-      // Cycle is now fully paid, check if all cycles for this loan are completed
+      // Get ALL cycles for this loan (including cancelled, expired, and completed)
       const allCycles = await Cycle.find({
         loanId: loanId,
-        status: { $ne: CycleStatus.CANCELLED },
       }).session(session);
 
-      const allCyclesCompleted = allCycles.every(
-        (c) =>
-          c._id.toString() === cycleId.toString() ||
-          c.status === CycleStatus.COMPLETED,
+      // Find the latest cycle by cycleCount
+      const latestCycle = allCycles.reduce(
+        (max, cycle) => (cycle.cycleCount > max.cycleCount ? cycle : max),
+        allCycles[0],
       );
 
-      if (allCyclesCompleted) {
+      // Check if the cycle being completed is the latest cycle
+      const isLatestCycle =
+        latestCycle && latestCycle._id.toString() === cycleId.toString();
+
+      // Check if all cycles are in terminal states (Completed, Cancelled, Expired)
+      const allCyclesTerminal = allCycles.every(
+        (c) =>
+          c._id.toString() === cycleId.toString() || // Current cycle being completed
+          c.status === CycleStatus.COMPLETED ||
+          c.status === CycleStatus.CANCELLED ||
+          c.status === CycleStatus.EXPIRED,
+      );
+
+      // If latest cycle is completed AND all other cycles are terminal, complete the loan
+      if (isLatestCycle && allCyclesTerminal) {
         // ============================================================
         // STEP 3A: Update Loan status to COMPLETED
         // ============================================================
@@ -283,9 +309,10 @@ export async function POST(request: NextRequest) {
 
         if (!loan) {
           await session.abortTransaction();
-          return NextResponse.json(
+          return corsErrorResponse(
+            request,
             { error: "Loan not found for profit distribution" },
-            { status: 404 },
+            404,
           );
         }
 
@@ -309,9 +336,10 @@ export async function POST(request: NextRequest) {
 
         if (!adminRole) {
           await session.abortTransaction();
-          return NextResponse.json(
+          return corsErrorResponse(
+            request,
             { error: "Admin role not found" },
-            { status: 404 },
+            404,
           );
         }
 
@@ -322,9 +350,10 @@ export async function POST(request: NextRequest) {
 
         if (!adminUser) {
           await session.abortTransaction();
-          return NextResponse.json(
+          return corsErrorResponse(
+            request,
             { error: "Admin user not found" },
-            { status: 404 },
+            404,
           );
         }
 
@@ -431,16 +460,17 @@ export async function POST(request: NextRequest) {
 
     await session.commitTransaction();
 
-    return NextResponse.json(payment[0], { status: 201 });
+    return corsResponse(request, payment[0], 201);
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Payment creation transaction error:", err);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         error: "Failed to create payment",
         details: err instanceof Error ? err.message : "Unknown error",
       },
-      { status: 500 },
+      500,
     );
   } finally {
     await session.endSession();

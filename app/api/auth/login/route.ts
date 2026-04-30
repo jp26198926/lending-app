@@ -1,11 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import connectDB from "@/lib/mongodb";
 import User, { UserStatus } from "@/models/User";
 import "@/models/Role";
 import RolePermission, { RolePermissionStatus } from "@/models/RolePermission";
 import "@/models/Page";
 import "@/models/Permission";
-import { generateToken, setAuthCookie } from "@/lib/auth";
+import { generateToken, setAuthCookie, isMobileClient } from "@/lib/auth";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
+
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
 
 // POST - Login user
 export async function POST(request: NextRequest) {
@@ -17,9 +27,10 @@ export async function POST(request: NextRequest) {
 
     // Validate input
     if (!email || !password) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Email and password are required" },
-        { status: 400 },
+        400,
       );
     }
 
@@ -30,9 +41,10 @@ export async function POST(request: NextRequest) {
     }).populate("roleId", "role status");
 
     if (!user) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Invalid email or password" },
-        { status: 401 },
+        401,
       );
     }
 
@@ -40,9 +52,10 @@ export async function POST(request: NextRequest) {
     const isPasswordValid = await user.comparePassword(password);
 
     if (!isPasswordValid) {
-      return NextResponse.json(
+      return corsErrorResponse(
+        request,
         { error: "Invalid email or password" },
-        { status: 401 },
+        401,
       );
     }
 
@@ -94,31 +107,50 @@ export async function POST(request: NextRequest) {
       roleId: user.roleId._id.toString(),
     });
 
-    // Set cookie
-    await setAuthCookie(token);
+    // Detect if request is from mobile app
+    const isMobile = isMobileClient(request);
+    
+    // Debug logging
+    console.log("=== LOGIN DEBUG ===");
+    console.log("X-Client-Type header:", request.headers.get("x-client-type"));
+    console.log("User-Agent:", request.headers.get("user-agent"));
+    console.log("Is Mobile Client:", isMobile);
+    console.log("Will return token in response:", isMobile);
+    console.log("==================");
 
-    // Return user data (without password)
-    return NextResponse.json(
-      {
-        message: "Login successful",
-        user: {
-          _id: user._id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          phone: user.phone,
-          roleId: user.roleId,
-          status: user.status,
-        },
-        permissions: userPermissions,
+    // Set cookie for web browsers (not for mobile)
+    if (!isMobile) {
+      await setAuthCookie(token);
+    }
+
+    // Prepare response data
+    const responseData = {
+      message: "Login successful",
+      user: {
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        roleId: user.roleId,
+        status: user.status,
       },
-      { status: 200 },
-    );
+      permissions: userPermissions,
+      ...(isMobile && {
+        token,
+        tokenType: "Bearer",
+        expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+      }),
+    };
+
+    // Return user data
+    return corsResponse(request, responseData, 200);
   } catch (error) {
     console.error("Login error:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       { error: "Login failed. Please try again." },
-      { status: 500 },
+      500,
     );
   }
 }

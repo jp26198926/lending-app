@@ -149,11 +149,15 @@ ${amount.toLocaleString()}   // Wrong!
 
 ### Authentication & Authorization System
 
-- **JWT-based authentication** with HTTP-only cookies
+- **Dual authentication strategy:**
+  - **Web Browsers:** JWT with HTTP-only cookies (secure, automatic)
+  - **Mobile Apps (Expo/React Native):** Bearer tokens (Authorization header)
 - **Role-based access control (RBAC)** with granular permissions
 - **Session management** with automatic token refresh
 - **Password management** with bcrypt hashing and change-password functionality
 - **Protected routes** on both frontend and backend
+- **Client detection:** Automatic via `X-Client-Type: mobile` header or User-Agent
+- **See [MOBILE_APP_INTEGRATION.md](../MOBILE_APP_INTEGRATION.md) for complete mobile setup**
 
 ### User Management
 
@@ -362,6 +366,13 @@ lending-app/
 │   │   - checkPermission()              # Role-based permission check
 │   │   - withAuth()                     # Combined middleware
 │   │   - getPermissionForMethod()       # HTTP method→permission mapping
+│   │
+│   ├── cors.ts                          # CORS utilities
+│   │   - setCorsHeaders()               # Apply CORS headers to response
+│   │   - handleCorsPreFlight()          # Handle OPTIONS requests
+│   │   - corsResponse()                 # Create CORS-enabled response
+│   │   - corsErrorResponse()            # CORS-enabled error response
+│   │   - ALLOWED_ORIGINS configuration  # Configure allowed origins
 │   │
 │   └── mongodb.ts                       # MongoDB connection handler
 │
@@ -710,6 +721,84 @@ User experience continues seamlessly
 - **Always** validate user status is ACTIVE on every request
 - **Always** check permissions on both frontend AND backend
 - **Never** trust client-side permission checks alone
+
+### CORS (Cross-Origin Resource Sharing)
+
+The API supports cross-origin requests for external frontends (e.g., mobile apps, external dashboards).
+
+**CORS Configuration** (`lib/cors.ts`):
+
+- Centralized CORS settings with allowed origins
+- Automatic CORS headers on all responses
+- Support for HTTP-only cookies with credentials
+
+**Allowed Origins** (modify in `lib/cors.ts`):
+
+```typescript
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000", // Next.js app
+  "http://localhost:8081", // External frontend
+  // Add production domains
+];
+```
+
+**CORS Pattern for API Routes:**
+
+```typescript
+import { NextRequest } from "next/server";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
+
+// OPTIONS - Handle CORS preflight (REQUIRED for all routes)
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
+
+// Use corsResponse for success, corsErrorResponse for errors
+export async function GET(request: NextRequest) {
+  try {
+    // Business logic
+    return corsResponse(request, { data: result }, 200);
+  } catch (error) {
+    return corsErrorResponse(request, { error: "Failed" }, 500);
+  }
+}
+```
+
+**Protected Routes:** Routes using `withAuth` automatically have CORS support. Only add OPTIONS handler:
+
+```typescript
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
+
+export async function GET(request: NextRequest) {
+  const { user, error } = await withAuth(request, PAGE_PATH);
+  if (error) return error; // Already has CORS headers
+
+  // Use corsResponse for success responses
+  return corsResponse(request, { data }, 200);
+}
+```
+
+**Frontend Requirements:**
+
+- ALL requests must include `credentials: 'include'` for cookies
+- Required for authentication to work cross-origin
+
+```javascript
+fetch("http://localhost:3000/api/auth/login", {
+  method: "POST",
+  credentials: "include", // CRITICAL
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email, password }),
+});
+```
+
+**See `CORS_IMPLEMENTATION.md` for complete guide.**
 
 ### Performance Considerations
 

@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import connectDB from "@/lib/mongodb";
 import Cycle, { CycleStatus } from "@/models/Cycle";
+import {
+  handleCorsPreFlight,
+  corsResponse,
+  corsErrorResponse,
+} from "@/lib/cors";
 import "@/models/Loan";
 
 /**
@@ -16,6 +21,11 @@ import "@/models/Loan";
  * Security: Requires CRON_SECRET in headers
  */
 
+// OPTIONS - Handle CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreFlight(request);
+}
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
@@ -25,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
       console.error("Unauthorized cron job attempt");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return corsErrorResponse(request, { error: "Unauthorized" }, 401);
     }
 
     await connectDB();
@@ -50,12 +60,16 @@ export async function POST(request: NextRequest) {
     );
 
     if (expiredCycles.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "No expired cycles to process",
-        processed: 0,
-        duration: Date.now() - startTime,
-      });
+      return corsResponse(
+        request,
+        {
+          success: true,
+          message: "No expired cycles to process",
+          processed: 0,
+          duration: Date.now() - startTime,
+        },
+        200,
+      );
     }
 
     const results = {
@@ -204,29 +218,34 @@ export async function POST(request: NextRequest) {
       duration: `${duration}ms`,
     });
 
-    return NextResponse.json({
-      success: true,
-      message: "Cron job completed successfully",
-      summary: {
-        totalProcessed: expiredCycles.length,
-        expired: results.expired.length,
-        created: results.created.length,
-        errors: results.errors.length,
+    return corsResponse(
+      request,
+      {
+        success: true,
+        message: "Cron job completed successfully",
+        summary: {
+          totalProcessed: expiredCycles.length,
+          expired: results.expired.length,
+          created: results.created.length,
+          errors: results.errors.length,
+        },
+        details: results,
+        duration,
+        timestamp: new Date().toISOString(),
       },
-      details: results,
-      duration,
-      timestamp: new Date().toISOString(),
-    });
+      200,
+    );
   } catch (error: unknown) {
     console.error("[CRON] Fatal error:", error);
-    return NextResponse.json(
+    return corsErrorResponse(
+      request,
       {
         success: false,
         error: "Failed to process cycles",
         details: error instanceof Error ? error.message : "Unknown error",
         duration: Date.now() - startTime,
       },
-      { status: 500 },
+      500,
     );
   }
 }
@@ -236,7 +255,7 @@ export async function GET(request: NextRequest) {
   const cronSecret = request.headers.get("x-cron-secret");
 
   if (!cronSecret || cronSecret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return corsErrorResponse(request, { error: "Unauthorized" }, 401);
   }
 
   // Call POST method
