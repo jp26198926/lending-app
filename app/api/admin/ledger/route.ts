@@ -219,8 +219,7 @@ export async function POST(request: NextRequest) {
         request,
         {
           error: "Insufficient cash on hand. Cannot complete this transaction.",
-          currentBalance: settings.cashOnHand,
-          requestedAmount: amount,
+          details: `Current balance: ${settings.cashOnHand.toFixed(2)}, Requested amount: ${amount.toFixed(2)}`,
         },
         400,
       );

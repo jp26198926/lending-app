@@ -60,13 +60,21 @@ export async function GET(
       .populate("deletedBy", "firstName lastName email");
 
     if (!ledger) {
-      return corsErrorResponse(request, { error: "Ledger entry not found" }, 404);
+      return corsErrorResponse(
+        request,
+        { error: "Ledger entry not found" },
+        404,
+      );
     }
 
     return corsResponse(request, ledger, 200);
   } catch (error) {
     console.error("Error fetching ledger entry:", error);
-    return corsErrorResponse(request, { error: "Failed to fetch ledger entry" }, 500);
+    return corsErrorResponse(
+      request,
+      { error: "Failed to fetch ledger entry" },
+      500,
+    );
   }
 }
 
@@ -107,19 +115,31 @@ export async function PUT(
 
     if (!ledger) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Ledger entry not found" }, 404);
+      return corsErrorResponse(
+        request,
+        { error: "Ledger entry not found" },
+        404,
+      );
     }
 
     // Prevent editing cancelled ledger entries
     if (ledger.status === LedgerStatus.CANCELLED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Cannot edit a cancelled ledger entry" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Cannot edit a cancelled ledger entry" },
+        403,
+      );
     }
 
     // Validate numeric values if provided
     if (amount !== undefined && amount < 0) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Amount must be a positive number" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Amount must be a positive number" },
+        400,
+      );
     }
 
     // Update fields
@@ -168,10 +188,14 @@ export async function PUT(
     await session.abortTransaction();
     console.error("Ledger update transaction error:", err);
 
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to update ledger entry",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }
@@ -197,7 +221,11 @@ export async function DELETE(
 
     if (!reason || reason.trim() === "") {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Deletion reason is required" }, 400);
+      return corsErrorResponse(
+        request,
+        { error: "Deletion reason is required" },
+        400,
+      );
     }
 
     await connectDB();
@@ -206,19 +234,31 @@ export async function DELETE(
 
     if (!ledger) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Ledger entry not found" }, 404);
+      return corsErrorResponse(
+        request,
+        { error: "Ledger entry not found" },
+        404,
+      );
     }
 
     // Prevent deleting already cancelled ledger entries
     if (ledger.status === LedgerStatus.CANCELLED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Ledger entry is already cancelled" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Ledger entry is already cancelled" },
+        403,
+      );
     }
 
     // Only completed ledger entries can be cancelled
     if (ledger.status !== LedgerStatus.COMPLETED) {
       await session.abortTransaction();
-      return corsErrorResponse(request, { error: "Only completed ledger entries can be cancelled" }, 403);
+      return corsErrorResponse(
+        request,
+        { error: "Only completed ledger entries can be cancelled" },
+        403,
+      );
     }
 
     // Soft delete (cancel)
@@ -235,7 +275,11 @@ export async function DELETE(
 
       if (!settings) {
         await session.abortTransaction();
-        return corsErrorResponse(request, { error: "Settings not found. Cannot reverse cash on hand." }, 404);
+        return corsErrorResponse(
+          request,
+          { error: "Settings not found. Cannot reverse cash on hand." },
+          404,
+        );
       }
 
       const newCashOnHand = settings.cashOnHand - ledger.amount;
@@ -243,11 +287,14 @@ export async function DELETE(
       // Prevent negative cash on hand
       if (newCashOnHand < 0) {
         await session.abortTransaction();
-        return corsErrorResponse(request, {
+        return corsErrorResponse(
+          request,
+          {
             error: "Insufficient cash on hand to reverse this transaction.",
-            currentBalance: settings.cashOnHand,
-            requestedDeduction: ledger.amount,
-          }, 400);
+            details: `Current balance: ${settings.cashOnHand.toFixed(2)}, Requested deduction: ${ledger.amount.toFixed(2)}`,
+          },
+          400,
+        );
       }
 
       await Settings.findByIdAndUpdate(
@@ -274,13 +321,15 @@ export async function DELETE(
           targetUser.capitalContribution < ledger.amount
         ) {
           await session.abortTransaction();
-          return corsErrorResponse(request, {
+          return corsErrorResponse(
+            request,
+            {
               error:
                 "Insufficient user balance to reverse this Capital In transaction.",
-              userCashWithdrawable: targetUser.cashWithdrawable,
-              userCapitalContribution: targetUser.capitalContribution,
-              requestedDeduction: ledger.amount,
-            }, 400);
+              details: `User withdrawable: ${targetUser.cashWithdrawable.toFixed(2)}, Capital contribution: ${targetUser.capitalContribution.toFixed(2)}, Requested deduction: ${ledger.amount.toFixed(2)}`,
+            },
+            400,
+          );
         }
 
         await User.findByIdAndUpdate(
@@ -350,10 +399,14 @@ export async function DELETE(
   } catch (err: unknown) {
     await session.abortTransaction();
     console.error("Ledger deletion transaction error:", err);
-    return corsErrorResponse(request, {
+    return corsErrorResponse(
+      request,
+      {
         error: "Failed to delete ledger entry",
         details: err instanceof Error ? err.message : "Unknown error",
-      }, 500);
+      },
+      500,
+    );
   } finally {
     await session.endSession();
   }

@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error: unknown) {
     console.error("[CRON] Fatal error:", error);
-    return corsErrorResponse(
+    return corsResponse(
       request,
       {
         success: false,
