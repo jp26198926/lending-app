@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Check if user is authenticated (optional - they can be logged in or not)
     let userId = null;
-    const token = getAuthCookie();
+    const token = await getAuthCookie();
     if (token) {
       const payload = verifyToken(token);
       if (payload && typeof payload !== "string") {
