@@ -241,6 +241,25 @@ ${amount.toLocaleString()}   // Wrong!
   - Automatic HTTP method to permission mapping
   - JWT token validation on every request
 
+### Privacy & Data Management
+
+- **Data Deletion Requests:**
+  - Public-facing deletion request form at `/request-deletion`
+  - Accessible to both authenticated and non-authenticated users
+  - Collects user information and deletion reason
+  - Automatic duplicate request prevention
+  - Email confirmation upon submission
+  - 30-day review and processing timeline
+- **Privacy Policy:**
+  - Comprehensive privacy policy page at `/privacy`
+  - Details about data collection and usage
+  - GDPR and privacy compliance information
+- **Deletion Request Tracking:**
+  - Status tracking: PENDING, APPROVED, REJECTED, COMPLETED
+  - Admin notification system for new requests
+  - Audit trail for processed requests
+  - Legal compliance for data retention requirements
+
 ---
 
 ## File and Folder Structure
@@ -255,6 +274,10 @@ lending-app/
 │   │   ├── layout.tsx                   # Main layout with Nav component
 │   │   ├── page.tsx                     # Home/dashboard page
 │   │   ├── about/                       # About page
+│   │   │   └── page.tsx
+│   │   ├── privacy/                     # Privacy policy page
+│   │   │   └── page.tsx
+│   │   ├── request-deletion/            # Data deletion request page
 │   │   │   └── page.tsx
 │   │   ├── home/                        # Home page (protected)
 │   │   │   └── page.tsx
@@ -381,7 +404,8 @@ lending-app/
 │   ├── Role.ts                          # Role model
 │   ├── Page.ts                          # Page model
 │   ├── Permission.ts                    # Permission model
-│   └── RolePermission.ts                # Role-Permission mapping
+│   ├── RolePermission.ts                # Role-Permission mapping
+│   └── DeletionRequest.ts               # Data deletion request tracking
 │
 ├── scripts/
 │   └── fix-permission-index.ts          # Database maintenance scripts
@@ -819,7 +843,7 @@ const [loading, setLoading] = useState(false); // form submission
 
 **Public vs Protected Pages:**
 
-- `/login` and `/about` - Public (no permission required)
+- `/login`, `/about`, `/privacy`, and `/request-deletion` - Public (no permission required)
 - `/home` - Authenticated only (no page permission required)
 - `/admin/*` - Require both authentication + page permission
 

@@ -15,7 +15,7 @@ export function usePageAccess() {
     if (loading) return false;
 
     // Public pages that don't require authentication
-    const publicPages = ["/login", "/about"];
+    const publicPages = ["/login", "/about", "/privacy", "/request-deletion"];
     const isPublicPage = publicPages.some((page) => pathname.startsWith(page));
 
     // If it's a public page, allow access
@@ -35,8 +35,8 @@ export function usePageAccess() {
           p.permissions.some(
             (perm) =>
               perm.permission.toLowerCase() === "access" &&
-              perm.status === "ACTIVE"
-          )
+              perm.status === "ACTIVE",
+          ),
       );
       return !hasAccess;
     }
@@ -48,7 +48,7 @@ export function usePageAccess() {
   useEffect(() => {
     if (loading) return;
 
-    const publicPages = ["/login", "/about"];
+    const publicPages = ["/login", "/about", "/privacy", "/request-deletion"];
     const isPublicPage = publicPages.some((page) => pathname.startsWith(page));
 
     // If user is not logged in and trying to access protected page, redirect to login
